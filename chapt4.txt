@@ -1,0 +1,1748 @@
+Chapter 4: Queries
+
+
+
+Install-Package NHibernate
+
+
+
+Application.Run(new WindowsFormsRunner());
+
+
+
+
+RecipeLoader.DefaultConfiguration = () => new Configuration()
+.DataBaseIntegration(db =>
+{
+ db.Dialect<MsSql2012Dialect>();
+ db.Driver<Sql2008ClientDriver>();
+ db.ConnectionString =
+ "Server=.\SQLEXPRESS;Database=NHCookbook;Trusted_
+ Connection=True;";
+});
+
+
+
+
+using NH4CookbookHelpers;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.QueryById
+{
+  public class Recipe : QueryRecipe
+  {
+    protected override void Run(ISession session)
+     {
+      var product  1 = session.Get<Product>(1);
+      ShowNumberOfQueriesExecuted();
+      ShowProduct(product1);
+      ShowNumberOfQueriesExecuted();
+      var product2 = session.Load<Product>(2);
+      ShowProduct(product2);
+      ShowNumberOfQueriesExecuted();
+      var movie2 = session.Load<Movie>(2);
+      ShowProduct(movie2);
+      ShowNumberOfQueriesExecuted();
+     }
+  }
+}
+
+
+
+
+
+SELECT
+product0_.Id as Id0_0_,
+product0_.Name as Name0_0_,
+product0_.Description as Descript4_0_0_,
+product0_.UnitPrice as UnitPrice0_0_,
+product0_.ISBN as ISBN0_0_,
+product0_.Author as Author0_0_,
+product0_.Director as Director0_0_,
+product0_.ProductType as ProductT2_0_0_ 
+FROM
+Product product0_ 
+WHERE
+product0_.Id=1
+
+
+
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Linq;
+namespace QueryRecipes.QueryByLinq
+{
+ public class LinqQueries : IQueries
+ {
+  private readonly ISession _session;
+  public LinqQueries(ISession session)
+  {
+   _session = session;
+  }
+public IEnumerable<Movie> GetMoviesDirectedBy(
+string directorName)
+{
+  return _session.Query<Movie>()
+  .Where(x => x.Director == directorName)
+  .ToList();
+}
+public IEnumerable<Movie> GetMoviesWith(
+string actorName)
+{
+   return _session.Query<Movie>()
+  .Where(x => x.Actors.Any(ar => 
+  ar.Actor == actorName))
+  .ToList();
+}
+public Book GetBookByISBN(string isbn)
+{
+  return _session.Query<Book>()
+  .FirstOrDefault(x => x.ISBN == isbn);
+}
+public IEnumerable<Product> GetProductsByPrice(
+decimal minPrice, decimal maxPrice)
+ {
+  return
+  _session.Query<Product>()
+  .Where(x =>
+  x.UnitPrice >= minPrice &&
+  x.UnitPrice <= maxPrice
+    )
+  .OrderBy(x => x.UnitPrice)
+  .ToList();
+ }
+}
+}
+
+
+
+
+using NH4CookbookHelpers;
+using NHibernate;
+namespace QueryRecipes.QueryByLinq
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISession session)
+  {
+   var queries = new LinqQueries(session);
+   ShowQueryResults(queries);
+  }
+ }
+}
+
+
+
+foreach(var movie in session.Query<Movie>())
+{
+  //Do something with the movie
+}
+
+
+
+
+var query=session.Query<Movie>();
+query = query.Where(x=>x.Name.StartsWith("Raiders "));
+query = query.Where(x=>x.Name.EndsWith("the Lost Ark"));
+//No query will be executed until the next line runs.
+var movie = query.FirstOrDefault();
+
+
+return _session.Query<Movie>()
+.Where(x => x.Director == directorName)
+.ToList();
+
+
+
+
+
+SELECT this_.Id as Id1_0_,
+this_.Name as Name1_0_,
+this_.Description as Descript4_1_0_,
+this_.UnitPrice as UnitPrice1_0_,
+this_.Director as Director1_0_
+FROM Product this_
+WHERE this_.ProductType = 'Movie'
+AND this_.Director = 'Steven Spielberg' 
+
+
+
+
+_session.Query<Movie>()
+.Where(x => x.Actors.Any(ar=>ar.Actor==actorName))
+.ToList();
+
+
+
+
+SELECT
+movie0_.Id as Id0_,
+movie0_.Name as Name0_,
+movie0_.Description as Descript4_0_,
+movie0_.UnitPrice as UnitPrice0_,
+movie0_.Director as Director0_ 
+FROM
+Product movie0_ 
+WHERE
+movie0_.ProductType='Movie' 
+AND (
+EXISTS (
+SELECT
+actors1_.Id 
+FROM
+ActorRole actors1_ 
+WHERE
+movie0_.Id=actors1_.MovieId 
+AND actors1_.Actor='Morgan Freeman'
+)
+);
+
+
+
+
+_session.Query<Movie>() 
+.Join(
+_session.Query<ActorRole>(),
+movie => movie, 
+actorRole => actorRole.Movie, 
+(movie, actorRole) => new
+{
+ Movie = movie,
+ ActorRole = actorRole
+})
+.Where(ar => ar.ActorRole.Actor==actorName)
+.Select(ar => ar.Movie)
+.Distinct()
+.ToList();
+
+
+
+
+_session.Query<Book>()
+.FirstOrDefault(x => x.ISBN == isbn);
+
+
+
+SELECT
+ book0_.Id as Id0_,
+ book0_.Name as Name0_,
+ book0_.Description as Descript4_0_,
+ book0_.UnitPrice as UnitPrice0_,
+ book0_.ISBN as ISBN0_,
+ book0_.Author as Author0_ 
+FROM
+ Product book0_ 
+WHERE
+ book0_.ProductType='Book' 
+ and book0_.ISBN='978-1-849513-04-3' 
+ORDER BY
+ CURRENT_TIMESTAMP 
+ OFFSET 0 ROWS FETCH FIRST 1 ROWS ONLY
+
+
+
+
+
+_session.Query<Product>()
+.Where(x => 
+x.UnitPrice >= minPrice && 
+x.UnitPrice <= maxPrice
+)
+.OrderBy(x=>x.UnitPrice)
+.ToList();
+
+
+
+
+SELECT
+ product0_.Id as Id0_,
+ product0_.Name as Name0_,
+ product0_.Description as Descript4_0_,
+ product0_.UnitPrice as UnitPrice0_,
+ product0_.ISBN as ISBN0_,
+ product0_.Author as Author0_,
+ product0_.Director as Director0_,
+ product0_.ProductType as ProductT2_0_ 
+FROM
+ Product product0_ 
+WHERE
+ product0_.UnitPrice>=0 
+ and product0_.UnitPrice<=15
+ORDER BY
+ product0_.UnitPrice ASC
+ 
+ 
+ 
+ 
+ 
+ using System.Collections.Generic;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Criterion;
+using NHibernate.SqlCommand;
+namespace QueryRecipes.QueryByCriteria
+{
+ public class CriteriaQueries : IQueries
+  {
+   private readonly ISession _session;
+   public CriteriaQueries(ISession session)
+   {
+    _session = session;
+   }
+ public IEnumerable<Movie> 
+ GetMoviesDirectedBy(string directorName)
+{
+  return _session.CreateCriteria<Movie>()
+  .Add(Restrictions.Eq("Director", 
+  directorName))
+  .List<Movie>();
+}
+public IEnumerable<Movie> 
+GetMoviesWith(string actorName)
+{
+  return _session.CreateCriteria<Movie>()
+  .CreateCriteria("Actors", JoinType.InnerJoin)
+  .Add(Restrictions.Eq("Actor", actorName))
+  .List<Movie>();
+}
+public Book GetBookByISBN(string isbn)
+{
+  return _session.CreateCriteria<Book>()
+  .Add(Restrictions.Eq("ISBN", isbn))
+  .UniqueResult<Book>();
+}
+public IEnumerable<Product> 
+GetProductsByPrice(decimal minPrice, 
+decimal maxPrice)
+{
+  return _session.CreateCriteria<Product>()
+  .Add(Restrictions.And(
+  Restrictions.Ge("UnitPrice", minPrice),
+  Restrictions.Le("UnitPrice", maxPrice)
+))
+.AddOrder(Order.Asc("UnitPrice"))
+.List<Product>();
+}
+}
+}
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+namespace QueryRecipes.QueryByCriteria
+{
+  public class Recipe : QueryRecipe
+   {
+    protected override void Run(ISession session)
+    {
+     var queries=new CriteriaQueries(session);
+     ShowQueryResults(queries);
+	}
+   }
+}
+
+
+
+_session.CreateCriteria<Movie>()
+.Add(Restrictions.Eq("Director", directorName))
+.List<Movie>();
+
+
+
+
+
+
+
+
+SELECT this_.Id as Id1_0_,
+ this_.Name as Name1_0_,
+ this_.Description as Descript4_1_0_,
+ this_.UnitPrice as UnitPrice1_0_,
+ this_.Director as Director1_0_
+FROM Product this_
+WHERE this_.ProductType = 'Movie'
+AND this_.Director = 'Steven Spielberg'
+
+
+_session.CreateCriteria<Movie>()
+.CreateCriteria("Actors", JoinType.InnerJoin)
+.Add(Restrictions.Eq("Actor", actorName))
+.List<Movie>();
+
+
+
+SELECT this_.Id as Id1_1_,
+ this_.Version as Version1_1_,
+ this_.Name as Name1_1_,
+ this_.Description as Descript5_1_1_,
+ this_.UnitPrice as UnitPrice1_1_,
+ this_.Director as Director1_1_,
+ actorrole1_.Id as Id0_0_,
+ actorrole1_.Version as Version0_0_,
+ actorrole1_.Actor as Actor0_0_,
+ actorrole1_.Role as Role0_0_
+FROM Product this_
+ inner join ActorRole actorrole1_
+ on this_.Id = actorrole1_.MovieId
+WHERE this_.ProductType = 'Movie'
+AND actorrole1_.Actor = 'Morgan Freeman' 
+
+
+
+
+_session.CreateCriteria<Book>()
+.Add(Restrictions.Eq("ISBN", isbn))
+.UniqueResult<Book>();
+
+
+
+SELECT this_.Id as Id1_0_,
+ this_.Name as Name1_0_,
+ this_.Description as Descript4_1_0_,
+ this_.UnitPrice as UnitPrice1_0_,
+ this_.Author as Author1_0_,
+ this_.ISBN as ISBN1_0_
+FROM Product this_
+WHERE this_.ProductType = 'Eg.Core.Book'
+AND this_.ISBN = '3043' 
+
+
+
+
+_session.CreateCriteria<Product>()
+.Add(Restrictions.And( 
+Restrictions.Ge("UnitPrice", minPrice),
+Restrictions.Le("UnitPrice", maxPrice)
+))
+.AddOrder(Order.Asc("UnitPrice"))
+.List<Product>()
+
+
+
+.Add(Restrictions.Between("UnitPrice", minPrice, maxPrice))
+
+
+
+
+
+SELECT this_.Id as Id1_0_,
+ this_.Name as Name1_0_,
+ this_.Description as Descript4_1_0_,
+ this_.UnitPrice as UnitPrice1_0_,
+ this_.Director as Director1_0_,
+ this_.Author as Author1_0_,
+ this_.ISBN as ISBN1_0_,
+ this_.ProductType as ProductT2_1_0_
+FROM Product this_
+WHERE (this_.UnitPrice >= 0 /* @p0 */
+ and this_.UnitPrice <= 15 /* @p1 */)
+ORDER BY this_.UnitPrice asc
+
+
+
+
+
+using System.Collections.Generic;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.QueryByQueryOver
+{
+ public class QueryOverQueries : IQueries
+  {
+   private readonly ISession _session;
+   public QueryOverQueries(ISession session)
+   {
+    _session = session;
+   }
+  }
+}
+
+
+
+public IEnumerable<Movie> GetMoviesDirectedBy(string directorName)
+{
+ return _session.QueryOver<Movie>()
+ Where(m => m.Director == directorName)
+ .List();
+}
+
+
+
+
+public IEnumerable<Movie> GetMoviesWith(string actorName)
+{
+ return _session.QueryOver<Movie>()
+ .Order  By(m => m.UnitPrice).Asc
+ .Inner.JoinQueryOver<A  ctorRole>(m => m.Actors)
+ .Where(a => a.Actor == actorName)
+ .List();
+}
+
+
+
+
+
+public Book G  etBookByISBN(string isbn)
+{
+ return _session.QueryOver<Book>()
+ .Where(b => b.ISBN == isbn)
+ .SingleOrDefault();
+}
+
+
+
+
+
+public IEnumerable<Product> GetProductsByPrice(
+decimal minPrice,
+decimal maxPrice)
+{
+ return _session.QueryOver<Product>()
+ .Where(p => p.UnitPrice >= minPrice
+ &&  p.UnitPrice <= maxPrice)
+ .OrderBy(p => p.UnitPrice).Asc
+ .List();
+}
+
+
+
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+namespace QueryRecipes.QueryByQueryOver
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISession session)
+  {
+   var queries = new QueryOverQueries(session);
+   ShowQueryResults(queries);
+  }
+ }
+}
+
+
+
+
+.Where(p => p.UnitPrice >= minPrice)
+.And(p => p.UnitPrice <= maxPrice)
+
+
+
+.Where(p => p.UnitPrice >= minPrice && p.UnitPrice <= maxPrice)
+
+
+
+
+.WhereRestrictionOn(p => p.UnitPrice)
+.IsBetween(minPrice).And(maxPrice)
+
+
+
+.Inner.JoinQueryOver<ActorRole>(m => m.Actors)
+
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Criterion;
+namespace QueryRecipes.QueryOverProjections
+{
+ public class QueryOverAggregateQueries : 
+ IAggregateQueries
+ {
+  private readonly ISession _session;
+  ublic QueryOverAggregateQueries(ISession session)
+  {
+   _session = session;
+  }
+ }
+}
+
+
+
+
+
+public IEnumerable<Nam  eAndPrice> GetMoviePriceList()
+{
+  return _session.QueryOver<Movie>()
+  .Select(m => m.Name, m => m.UnitPrice)
+  .List<object[]>()
+  .Select(props =>
+  new NameAndPrice()
+  {
+    Name = (string)props[0],
+    Price = (decimal)props[1]
+  });
+}
+
+
+
+
+public d  ecimal GetAverageMoviePrice()
+{
+  var result = _session.QueryOver<Movie>()
+  .Select(Projections.Avg<Movie>(m => m.UnitPrice))
+  .SingleOrDefault<double>();
+  return Convert.ToDecimal(result);
+}
+
+
+
+
+public IEnumerable<NameA  ndPrice> GetAvgDirectorPrice()
+{
+  return _session.QueryOver<Movie>()
+  .Select(list => list
+  .SelectGroup(m => m.Director)
+ .SelectAvg(m => m.UnitPrice)
+)
+  .List<object[]>()
+  .Select(props =>
+  new NameAndPrice()
+{
+  Name = (string)props[0],
+  Price = Convert.ToDecimal(props[1])
+});
+}
+
+
+
+
+using NH4CookbookHelpers;
+using NHibernate;
+namespace QueryRecipes.QueryOverProjections
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISession session)
+  {
+   var queries = new QueryOverAggregateQueries(session);
+   ShowAggregateQueryResults(queries);
+  }
+ }
+}
+
+
+
+
+
+_session.QueryOver<Movie>()
+.Select(m => m.Name, m => m.UnitPrice)
+.List<object[]>()
+.Select(props =>
+new NameAndPrice()
+{
+  Name = (string)props[0],
+  Price = (decimal)props[1]
+});
+
+
+
+SELECT this_.Name as y0_,
+this_.UnitPrice as y1_
+FROM Product this_
+WHERE this_.ProductType = 'Eg.Core.Movie'
+
+
+
+_session.QueryOver<Movie>()
+.Select(Projections.Avg<Movie>(m => m.UnitPrice))
+.SingleOrDefault<double>();
+
+
+
+SELECT avg(cast(this_.UnitPrice as DOUBLE PRECISION)) as y0_
+FROM Product this_
+WHERE this_.ProductType = 'Eg.Core.Movie'
+
+
+
+
+
+
+_session.QueryOver<Movie>()
+.Select(list => list
+.SelectGroup(m => m.Director)
+.SelectAvg(m => m.UnitPrice)
+)
+.List<object[]>()
+.Select(props =>
+new NameAndPrice()
+{
+ Name = (string)props[0],
+ Price = Convert.ToDecimal(props[1])
+});
+
+
+
+
+.Select(list => list
+.SelectGroup(m => m.Director)
+.SelectAvg(m => m.UnitPrice)
+)
+
+
+
+
+
+using System.Collections.Generic;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.QueryByHql
+{
+  public class HqlQueries : IQueries, IAggregateQueries
+   {
+    private readonly ISession _session;
+    public HqlQueries(ISession session)
+    {
+     _session = session;
+    }
+  public IEnumerable<Movie> GetMoviesDirectedBy(
+  string directorName)
+  {
+   var hql = @"from Movie m 
+   where m.Director = :director";
+   return _session.CreateQuery(hql)
+   .SetString("director", directorName)
+   .SetLockMode("m",LockMode.Upgrade)
+   .List<Movie>();
+  }
+public IEnumerable<Movie> GetMoviesWith(
+string actorName)
+ {
+  var hql = @"select m
+  from Movie m
+  inner join m.Actors as ar
+  where ar.Actor = :actorName";
+  return _session.CreateQuery(hql)
+  .SetString("actorName", actorName)
+  .List<Movie>();
+ }
+public Book GetBookByISBN(string isbn)
+{
+  var hql = @"from Book b
+  where b.ISBN = :isbn";
+  return _session.CreateQuery(hql)
+  .SetString("isbn", isbn)
+  .UniqueResult<Book>();
+}
+public IEnumerable<Product> GetProductsByPrice(
+decimal minPrice,
+decimal maxPrice)
+{
+  var hql = @"from Product p
+  where p.UnitPrice >= :minPrice
+  and p.UnitPrice <= :maxPrice
+  order by p.UnitPrice asc";
+  return _session.CreateQuery(hql)
+  .SetDecimal("minPrice", minPrice)
+  .SetDecimal("maxPrice", maxPrice)
+  .List<Product>();
+}
+public IEnumerable<NameAndPrice> GetMoviePriceList()
+{
+ var hql = @"select new NameAndPrice(
+ m.Name, m.UnitPrice)
+ from Movie m";
+ eturn _session.CreateQuery(hql)
+ .List<NameAndPrice>();
+}
+public decimal GetAverageMoviePrice()
+{
+ var hql = @"select Cast(avg(m.UnitPrice) 
+ as Currency)
+ from Movie m";
+ return _session.CreateQuery(hql)
+.UniqueResult<decimal>();
+}
+public IEnumerable<NameAndPrice> GetAvgDirectorPrice()
+{
+ var hql = @"select new NameAndPrice(
+ m.Director, 
+ Cast(avg(m.UnitPrice) as Currency)
+)
+from Movie m
+group by m.Director";
+return _session.CreateQuery(hql)
+.List<NameAndPrice>();
+}
+}
+}
+
+
+
+
+
+using NH4CookbookHelpers;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Cfg;
+using NHibernate.Mapping.ByCode;
+namespace QueryRecipes.QueryByHql
+{
+  public class Recipe : QueryRecipe
+  {
+     protected override void Configure(
+     Configuration nhConfig)
+     {
+      var modelMapper = new ModelMapper();
+      modelMapper.Import<NameAndPrice>();
+      var mapping = modelMapper.
+      CompileMappingForAllExplicitlyAddedEntities();
+      nhConfig.AddMapping(mapping);
+     }
+  protected override void Run(ISession session)
+   {
+    var queries = new HqlQueries(session);
+    ShowQueryResults(queries);
+    ShowAggregateQueryResults(queries);
+   }
+ }
+}
+
+
+
+
+
+
+from Movie m 
+where m.Director = :director
+
+
+
+
+select m
+from Movie m
+inner join m.Actors as ar
+where ar.Actor = :actorName
+
+
+
+
+from Product p
+where p.UnitPrice >= :minPrice
+and p.UnitPrice <= :maxPrice
+order by p.UnitPrice asc
+
+
+
+
+
+from Product p
+where p.UnitPrice between
+:minPrice and :maxPrice
+order by p.UnitPrice asc
+
+
+
+
+select new NameAndPrice(m.Name, m.UnitPrice)
+from Movie m
+
+
+
+
+public NameAndPrice(string name, decimal unitPrice)
+
+
+
+
+
+
+<import class="NameAndPrice"/>
+
+
+
+var modelMapper = new ModelMapper();
+modelMapper.Import<NameAndPrice>();
+var mapping = modelMapper.
+CompileMappingForAllExplicitlyAddedEntities();
+nhConfig.AddMapping(mapping);
+
+
+
+
+
+var hql = @"select m.Name, m.UnitPrice
+from Movie m";
+var query = session.CreateQuery(hql);
+return query.List<object[]>()
+.Select(props =>
+new NameAndPrice(
+(string)props[0],
+(decimal)props[1]));
+
+
+
+select Cast(avg(m.UnitPrice) as Currency)
+from Movie m
+
+
+
+
+
+select new NameAndPrice(
+m.Director, 
+Cast(avg(m.UnitPrice) as Currency)
+)
+from Movie m
+group by m.Director
+
+
+
+
+
+
+
+using System.Collections.Generic;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.QueryBySql
+{
+ public class SqlQueries : IQueries
+ {
+  private readonly ISession _session;
+  public SqlQueries(ISession session)
+  {
+   _session = session;
+  }
+  public IEnumerable<Movie> GetMoviesDirectedBy(
+  string directorName)
+   {
+    var sql = @"select * from Product 
+    where ProductType = 'Movie' 
+    and Director = :director";
+    return _session.CreateSQLQuery(sql)
+    .AddEntity(typeof(Movie))
+    .SetString("director", directorName)
+    .List<Movie>();
+   }
+public IEnumerable<Movie> GetMoviesWith(
+string actorName)
+{
+  var sql = @"select m.*
+  from Product m
+  inner join ActorRole as ar on ar.MovieId=m.Id
+  where ar.Actor = :actorName";
+  return _session.CreateSQLQuery(sql)
+  .AddEntity(typeof(Movie))
+  .SetString("actorName", actorName)
+ .List<Movie>();
+}
+public Book GetBookByISBN(string isbn)
+{
+ var sql = @"select b.* from Product b
+ where b.ISBN = :isbn";
+ return _session.CreateSQLQuery(sql)
+ .AddEntity(typeof(Book))
+ .SetString("isbn", isbn)
+ .UniqueResult<Book>();
+}
+public IEnumerable<Product> GetProductsByPrice(
+decimal minPrice,
+decimal maxPrice)
+{
+ var sql = @"select p.* from Product p
+ where p.UnitPrice between :minPrice
+ and :maxPrice
+ order by p.UnitPrice asc";
+ return _session.CreateSQLQuery(sql)
+ .AddEntity(typeof(Product))
+ .SetDecimal("minPrice", minPrice)
+ .SetDecimal("maxPrice", maxPrice)
+ .List<Product>();
+}
+}
+}
+
+
+
+
+using NH4CookbookHelpers;
+using NHibernate;
+namespace QueryRecipes.QueryBySql
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISession session)
+  {
+   var queries=new SqlQueries(session);
+   ShowQueryResults(queries);
+  }
+ }
+}
+
+
+
+
+
+
+using System.Linq;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Linq;
+namespace QueryRecipes.EagerLoadingWithLinq
+{
+  public class Recipe : QueryRecipe
+   {
+    protected override void Run(ISession session)
+    {
+     var book = session.Query<Book>()
+     .Fetch(x => x.Publisher)
+     .FirstOrDefault();
+     Show("Book:", book);
+     var movies = session.Query<Movie>()
+	 .FetchMany(x => x.Actors)
+     .ToList();
+     Show("Movies:", movies);
+    }
+   }  
+}
+
+
+
+
+
+session.Query<Movie>()
+.FetchMany(x=>x.Actors)
+
+
+
+session.Query<Mo  vie>()
+.FetchMany(x=>x.Actors)
+.ThenFetch(a=>a.BookAboutTheRole)
+
+
+
+
+session.Query<Movie>()
+.FetchMany(x=>x.Actors)
+.ThenFetch(a=>a.BookAboutTheRole)
+.FetchMany(x=>x.Actors)
+.ThenFetch(a=>a.DocumentaryAboutTheActor)
+
+
+
+
+session.Query<Movie>()
+.FetchMany(x => x.Actors)
+.OrderBy(x=>x.Name)
+.Take(2)
+
+
+
+
+
+
+session.Query<Movie>()
+.FetchMany(x => x.Actors)
+.FetchMany(x => x.MakeUpArtists)
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+  assembly="Eg.Core"
+  namespace="Eg.Core">
+  <subclass name="Movie" extends="Product">
+   <property name="Director" />
+   <list name="Actors" cascade="all-delete-orphan"
+     batch-size="10">
+     <key column="MovieId" />
+     <index column="ActorIndex" />
+     <one-to-many class="ActorRole"/>
+  </list>
+ </subclass>
+</hibernate-mapping>
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Transform;
+namespace QueryRecipes.EagerLoadingWithCriteria
+{
+public class Recipe : QueryRecipe
+{
+ protected override void Run(ISession session)
+  {
+   var book = session.CreateCriteria<Book>()
+   .SetFetchMode("Publisher", FetchMode.Join)
+   .UniqueResult<Book>();
+   Show("Book:", book);
+   var movies = session.CreateCriteria<Movie>()
+   .SetFetchMode("Actors", FetchMode.Join)
+   .SetResultTransformer(
+   Transformers.DistinctRootEntity)
+   .List<Movie>();
+   Show("Movies:", movies);
+  }
+ }
+}
+
+
+
+
+
+
+
+session.CreateCriteria<Movie>()
+.SetFetchMode("Actors", FetchMode.Join)
+.SetFetchMode("Actors.BookAboutTheRole", FetchMode.Join)
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Transform;
+namespace QueryRecipes.EagerLoadingWithQueryOver
+{
+  public class Recipe : QueryRecipe
+   {
+    protected override void Run(ISession session)
+     {
+      var book = session.QueryOver<Book>()
+      .Fetch(x => x.Publisher).Eager
+      .SingleOrDefault();
+      Show("Book:", book);
+      var movies = session.QueryOver<Movie>()
+      .Fetch(x => x.Actors).Eager
+      .OrderBy(x => x.Name).Asc
+      .TransformUsing(
+      Transformers.DistinctRootEntity)
+      .List();
+      Show("Movies:", movies);
+     }
+   }
+}
+
+
+
+
+.Fetch(x => x.Actors).Eager
+.Fetch(x => x.Actors.First().BookAboutTheRole).Eager
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.EagerLoadingWithHql
+{
+  public class Recipe : QueryRecipe
+  {
+    protected override void Run(ISession session)
+    {
+     var book = session.CreateQuery(@"
+     from Book b
+     left join fetch b.Publisher")
+     .UniqueResult<Book>();
+     Show("Book:", book);
+     var movies = session.CreateQuery(@"
+     from Movie m
+     left join fetch m.Actors")
+     .SetResultTransformer(
+     Transformers.DistinctRootEntity)
+     .List<Movie>();
+     Show("Movies:", movies);
+    }
+  }
+}
+
+
+
+
+
+left join fetch m.Actors a
+where a.Actor=:name
+
+
+left join fetch m.Actors a
+left join fetch a.BookAboutTheRole
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Transform;
+namespace QueryRecipes.EagerLoadingWithSql
+{
+  public class Recipe : QueryRecipe
+   {
+    protected override void Run(ISession session)
+     {
+      var book = session.CreateSQLQuery(@"
+      select {b.*}, {p.*} from Product b
+      left join Publisher p 
+      ON b.PublisherId=p.Id
+      where b.ProductType = 'Book'")
+      .AddEntity("b", typeof(Book))
+      .AddJoin("p", "b.Publisher")
+      .UniqueResult<Book>();
+      Show("Book:", book);
+      var movies = session.CreateSQLQuery(@"
+      select {m.*}, {ar.*} from Product m
+      left join ActorRole ar ON ar.MovieId=m.Id
+      where m.ProductType = 'Movie' 
+      ")
+      .AddEntity("m", typeof(Movie))
+      .AddJoin("ar", "m.Actors")
+      .AddEntity("m", typeof(Movie))
+      .SetResultTransformer(
+      Transformers.DistinctRootEntity)
+      .List<Movie>();
+     Show("Movies:", movies);
+     }
+   }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+ <query name="GetBookByISBN">
+  <![CDATA[
+  from Book b where b.ISBN = :isbn
+  ]]>
+ </query>
+</hibernate-mapping>
+
+
+
+
+
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.NamedQueries
+{
+ public class NamedQueries
+  {
+   private readonly ISession _session;
+   public NamedQueries(ISession session)
+    {
+     _session = session;
+    }
+   public Book GetBookByISBN(string isbn)
+   {
+    return _session.GetNamedQuery("GetBookByISBN")
+    .SetString("isbn", isbn)
+    .UniqueResult<Book>();
+   }
+ }
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+using NHibernate.Cfg;
+namespace QueryRecipes.NamedQueries
+{
+ public class Recipe : QueryRecipe
+ {
+   protected override void Configure(Configuration nhConfig)
+    {
+     nhConfig.AddResource(
+     "QueryRecipes.NamedQueries.Queries.hbm.xml", 
+     GetType().Assembly);
+    }
+ protected override void Run(ISession session)
+   {
+    var queries = new NamedQueries(session);
+    Show("This book:",
+    queries.GetBookByISBN(
+    "Steven Spielberg"));
+   }
+ }
+}
+
+
+
+
+
+nhConfig.AddResource(
+"QueryRecipes.NamedQueries.Queries.hbm.xml", 
+GetType().Assembly);
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+ <sql-query name="GetBookByISBN_SQL">
+ <return alias="b" class="Eg.Core.Book, Eg.Core" />
+ <![CDATA[
+SELECT 
+ b.Id AS [b.Id],
+ b.Name AS [b.Name],
+ b.Description AS [b.Description],
+ b.UnitPrice AS [b.UnitPrice],
+ b.Author AS [b.Author],
+ b.ISBN as [b.ISBN]
+FROM Product b
+WHERE b.ProductType = 'Eg.Core.Book'
+AND b.ISBN = :isbn
+ ]]>
+ <query-param name="isbn" type="string"/>
+ </sql-query>
+</hibernate-mapping>
+
+
+
+
+var multiQuery = session.CreateMultiQuery()
+.AddNamedQuery<int>("count", "CountAllProducts")
+.Add<Product>("page", pageQuery);
+
+
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Criterion;
+namespace QueryRecipes.DetachedQueries
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISession session)
+   {
+    var isbn = "3043";
+	var query = DetachedCriteria.For<Book>()
+	.Add(Restrictions.Eq("ISBN", isbn));
+	var book = query.GetExecutableCriteria(session)
+	.UniqueResult<Book>();
+	Show("Book with ISBN=3043",book);
+  }
+ }
+}
+
+
+
+
+var query = new DetachedNamedQuery("GetBookByISBN")
+.SetString("isbn", isbn);
+var query = new DetachedQuery(hql)
+.SetString("isbn", isbn);
+
+
+
+
+
+
+using System;
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+namespace QueryRecipes.HqlBulkChanges
+{
+public class Recipe : QueryRecipe
+{
+  protected override void Run(ISession session)
+   {
+    var hql = @"update Book b 
+    set b.UnitPrice = :minPrice
+    where b.UnitPrice < :minPrice";
+    var updated=session.CreateQuery(hql)
+    .SetDecimal("minPrice", 55M)
+	.ExecuteUpdate();
+    Console.WriteLine("Number of books updated:" +
+    updated);
+    hql = @"delete from Book
+    where UnitPrice=:minPrice";
+    var deleted = session.CreateQuery(hql)
+    .SetDecimal("minPrice", 55M)
+    .ExecuteUpdate();
+    Console.WriteLine("Number of books deleted:" + 
+    deleted);
+    hql = @"insert into Book (Name,Description) 
+    select concat(Name,' - the book'),
+    Description 
+    from Movie";
+    var inserted = session.CreateQuery(hql)
+    .ExecuteUpdate();
+    Console.WriteLine(@"Number of movies recreated
+    as books:" + inserted);
+  }
+ }
+}
+
+
+
+
+
+update Book b 
+set b.UnitPrice = :minPrice
+where b.UnitPrice < :minPrice
+
+
+
+update Product
+set UnitPrice = 55 
+where ProductType = 'Book'
+and UnitPrice < 55 
+
+
+
+
+delete 
+from
+Product 
+where
+ProductType = 'Book' 
+and UnitPrice = 55
+
+
+
+
+insert into Book (Name,Description) 
+select concat(Name,' - the book'),Description 
+from Movie
+
+
+
+
+insert 
+into
+Product
+( Name, Description, ProductType ) select
+(movie0_.Name+' - the book') as col_0_0_,
+movie0_.Description as col_1_0_,
+'Book' 
+from
+Product movie0_ 
+where
+movie0_.ProductType='Movie'
+
+
+
+
+
+
+
+
+insert into destinationEntity (id, prop1, prop2) select b.id, b.prop1, 
+b.prop2 from sourceEntity b where..
+
+
+
+
+
+foreach (var actorRole in movie.Actors
+.Where(x=>x.Actor=="Harrison Ford"))
+{
+  Console.WriteLine("Harrison Ford played {0} in {1}", 
+  actorRole.Role, 
+  movie.Name);
+}
+
+
+
+
+
+
+using System;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace QueryRecipes.CollectionFilters
+{
+ public class Recipe : QueryRecipe
+  {
+   protected override void Run(ISession session)
+    {
+		var movie = session.Get<Movie>(1);
+		var actorFilter=session
+		.CreateFilter(movie.Actors,
+		"WHERE Actor=:actor");
+		actorFilter.SetString("actor", 
+		"Harrison Ford");
+		var actors = actorFilter.List<ActorRole>();
+		foreach (var actorRole in actors)
+         {
+			Console.WriteLine(
+			"Harrison Ford played {0} in {1}",
+			actorRole.Role,
+			movie.Name);
+		 }
+    }
+  }
+}
+
+
+
+
+
+
+var actorQuery = session.CreateQuery(
+@"SELECT m.Actors FROM Movie m 
+ INNER JOIN m.Actors ar 
+ WHERE m=:movie 
+ AND ar.Actor=:actor");
+  actorQuery.SetEntity("movie", movie);
+  actorQuery.SetString("actor", "Harrison Ford");
+  
+  
+  
+  
+  
+  
+if (NHibernateUtil.IsInitialized(movie.Actors))
+{
+  actors = movie.Actors.Where(x => x.Actor == "Harrison Ford");
+}
+else
+ {
+	actors = session
+	.CreateFilter(movie.Actors,"WHERE Actor=:actor")
+	.SetString("actor", "Harrison Ford")
+	.List<ActorRole>();
+}
+
+
+
+
+
+var actors = movie.Actors.Query()
+.Where(x => x.Actor == "Harrison Ford");
+
+
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Transform;
+namespace QueryRecipes.ResultTransformers
+{
+  public class Recipe : QueryRecipe
+   {
+    protected override void Run(ISession session)
+     {
+		var movieQuery = session.QueryOver<Movie>()
+		.Inner.JoinQueryOver(x => x.Actors);
+		Console.WriteLine(
+		"Result count without transformer:{0}", 
+		movieQuery.List<Movie>().Count);
+		movieQuery = movieQuery.
+		TransformUsing(Transformers.DistinctRootEntity);
+		Console.WriteLine(
+		"Result count with transformer:{0}", 
+		movieQuery.List<Movie>().Count);
+		var bookResults = session.CreateSQLQuery(@"
+		select b.Name, b.Author,p.Name as PublisherName
+		from Product b
+		left join Publisher p ON b.PublisherId=p.Id
+		where b.ProductType = 'Book'")
+		.SetResultTransformer(Transformers.
+		AliasToBean<BookInfo>())
+		.List<BookInfo>();
+		Console.WriteLine("BookInfo objects:");
+		foreach (var result in bookResults)
+         {
+			Console.WriteLine("{0}, by {1}, published by {2}",
+			result.Name,
+			result.Author,
+			result.PublisherName);
+         }
+     }
+  }
+}
+
+
+
+
+
+
+
+public interface IResultTransformer
+{
+ object TransformTuple(object[] tuple, string[] aliases);
+ IList TransformList(IList collection);
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries.Model;
+namespace QueryRecipes.ExtraLazy
+{
+ public class Accessory : Entity
+  {
+   public virtual string Name { get; set; }
+  }
+}
+
+
+
+
+
+using System;
+using System.Collections.Generic;
+namespace QueryRecipes.ExtraLazy
+{
+public class Car 
+ {
+  public Car()
+   {
+     Accessories=new HashSet<Accessory>();
+   }
+		public virtual Guid Id { get; protected set; }
+		public virtual string Make { get; set; }
+		public virtual string Model { get; set; }
+		public virtual ISet<Accessory> Accessories { get; set; }
+  }
+}
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="QueryRecipes"
+ namespace="QueryRecipes.ExtraLazy">
+	<class name="Car">
+		<id name="Id">
+			<generator class="guid.comb" />
+		</id>
+		<property name="Make" />
+		<property name="Model" />
+		<set name="Accessories" table="CarAccessories" lazy="extra"
+			cascade="all">
+			<key column="CarId" foreign-key=""/>
+			<composite-element class="Accessory">
+				<property name="Name"/>
+			</composite-element>
+		</set>
+	</class>
+</hibernate-mapping>
+
+
+
+
+
+
+using System;
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+using NHibernate.Cfg;
+namespace QueryRecipes.ExtraLazy
+{
+  public class Recipe : QueryRecipe
+	{
+		private Guid _carId;
+		private int _firstAccessoryId;
+		protected override void Configure(
+		Configuration nhConfig)
+		{
+			nhConfig.AddResource(
+			"QueryRecipes.ExtraLazy.Car.hbm.xml", GetType().Assembly);
+		}
+	}
+}
+
+
+
+
+
+protected override void AddData(
+ISessionFactory sessionFactory)
+{
+	using (var session = sessionFactory.OpenSession())
+		{
+			using (var tx = session.BeginTransaction())
+				{
+					var car = new Car { Make = "SAAB", Model = "9-5" };
+					for (var i = 0; i < 100; i++)
+					{
+						var accessory = new Accessory { 
+						Name = "Accessory" + i };
+						car.Accessories.Add(accessory);
+					}
+					session.Save(car);
+					_carId = car.Id;
+					_firstAccessoryId = car.Accessories.First().Id;
+					tx.Commit();
+				}
+		}
+}
+
+
+
+
+
+
+protected override void Run(ISession session)
+{
+		//Get the car
+		var car = session.Get<Car>(_carId);
+		//And one of the accessories
+		var accessory = 
+		session.Get<Accessory>(_firstAccessoryId);
+		Console.WriteLine("Accessory count: {0}", 
+		car.Accessories.Count);
+		Console.WriteLine("Car has accessory {0}: {1}", 
+		accessory.Name, car.Accessories.Contains(accessory));
+}
+
+
+
+
+
+SELECT count(AccessoryId) 
+FROM CarAccessories 
+WHERE CarId=1
+
+
+
+
+SELECT 1 FROM
+CarAccessories 
+WHERE CarId=1
+AND AccessoryId=1
+
+
+
+
+
+
+
+
+

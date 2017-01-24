@@ -1,0 +1,1178 @@
+Chapter 3: Sessions and Transactions
+
+
+
+using NHibernate;
+using NHibernate.Cfg;
+using NHibernate.Contex t;
+
+
+public static ISessionFactory SessionFactory { get; private set; }
+
+
+
+
+protected void Application_Start(object sender, EventArgs e)
+{
+  SessionFactory=ProductModel
+  .CreateExampleSessionFactory(true, conf => {
+  conf.SetProperty("current_session_context_class", "web");
+ });
+}
+
+
+
+
+protected void Application_Start(object sender, EventArgs e)
+{
+ var nhConfig = new Configuration().Configure();
+ SessionFactory = nhConfig.BuildSessionFactory();
+}
+
+
+
+
+
+protected void Application_BeginRequest(object sender, EventArgs e)
+{
+  var session = SessionFactory.OpenSession();
+  CurrentSessionContext.Bind(session);
+}
+
+
+
+
+{
+ var session = CurrentSessionContext.Unbind(SessionFactory);
+ session.Dispose();
+}
+
+
+
+
+Guid productId = new Guid(Request["id"]);
+Product product;
+var session = Global.SessionFactory.GetCurrentSession();
+using (var tran = session.BeginTransaction())
+{
+  product = session.Get<Product>(productId);
+  tran.Commit();
+}
+Page.Title = product.Name;
+Label1.Text = product.Name;
+Label2.Text = product.Description;
+
+
+
+
+
+
+using System;
+using System.Collections.Generic;
+namespace SessionPerPresenter.Data
+{
+ public interface IDao<TEntity> : IDisposable
+ where TEntity : class
+ {
+  IEnumerable<TEntity> GetAll();
+ }
+}
+
+
+
+using System.Collections.Generic;
+namespace SessionPerPresenter.Data
+{
+public class Dao<TEntity> : IDao<TEntity>
+where TEntity : class
+{
+ private readonly ISessionProvider _sessionProvider;
+ public Dao(ISessionProvider sessionProvider)
+ {
+  _sessionProvider = sessionProvider;
+ }
+  public void Dispose()
+  {
+   _sessionProvider.Dispose();
+  }
+   public IEnumerable<TEntity> GetAll()
+  {
+   var session = _sessionProvider.GetCurrentSession();
+   IEnumerable<TEntity> results;
+   using (var tx = session.BeginTransaction())
+   {
+    results = session.QueryOver<TEntity>()
+    .List<TEntity>();
+    tx.Commit();
+   }
+  return results;
+  }
+ }
+}
+
+
+
+
+using System;
+using NHibernate;
+namespace SessionPerPresenter.Data
+{
+ public interface ISessionProvider : IDisposable
+ {
+ ISession GetCurrentSession();
+ void DisposeCurrentSession();
+ }
+}
+
+
+
+
+using System;
+using NHibernate;
+namespace SessionPerPresenter.Data
+{
+ public class SessionProvider : ISessionProvider
+  {
+   private readonly ISessionFactory _sessionFactory;
+   private ISession _currentSession;
+   public SessionProvider(ISessionFactory sessionFactory)
+   {
+    Console.WriteLine("Building session provider");
+    _sessionFactory = sessionFactory;
+   }
+ public ISession GetCurrentSession()
+  {
+   if (null == _currentSession)
+   {
+    Console.WriteLine("Opening session");
+    _currentSession = _sessionFactory.OpenSession();
+   }
+  return _currentSession;
+ } 
+ public void DisposeCurrentSession()
+  {
+    _currentSession.Dispose();
+    _currentSession = null;
+  }
+  public void Dispose()
+  {
+   if (_currentSession != null)
+   {
+     Console.WriteLine("Disposing session");
+     _currentSession.Dispose();
+   }
+  _currentSession = null;
+  }
+ }
+}
+
+
+
+
+
+using System;
+using System.Collections.Generic;
+using NH4CookbookHelpers.Queries.Model;
+namespace SessionPerPresenter
+{
+ public class ProductListView
+ {
+   private readonly string _description;
+   private readonly IEnumerable<Product> _products;
+   public ProductListView(
+   string description,
+   IEnumerable<Product> products)
+   {
+    _description = description;
+    _products = products;
+   }
+   public void Show()
+   {
+    Console.WriteLine(_description);
+    foreach (var p in _products)
+    Console.WriteLine(" * {0}", p.Name);
+   }
+  }
+}
+
+
+
+
+
+
+using System;
+namespace SessionPerPresenter
+{
+ public interface IPresenter : IDisposable
+ {
+ }
+}
+
+
+
+
+using System.Linq;
+using NH4CookbookHelpers.Queries.Model;
+using SessionPerPresenter.Data;
+namespace SessionPerPresenter
+{
+ public class MediaPresenter : IPresenter
+ {
+  private readonly IDao<Movie> _movieDao;
+  private readonly IDao<Book> _bookDao;
+  public MediaPresenter(IDao<Movie> movieDao,
+  IDao<Book> bookDao)
+  {
+   _movieDao = movieDao;
+   _bookDao = bookDao;
+  }
+ public ProductListView ShowBooks()
+ {
+   return new ProductListView("All Books",
+   _bookDao.GetAll().OfType<Product>());
+  }
+ public ProductListView ShowMovies()
+ {
+  return new ProductListView("All Movies",
+  _movieDao.GetAll().OfType<Product>());
+ }
+  public void Dispose()
+  {
+   _movieDao.Dispose();
+   _bookDao.Dispose();
+  }
+ }
+}
+
+
+
+
+using NH4CookbookHelpers.Queries.Model;
+using SessionPerPresenter.Data;
+namespace SessionPerPresenter
+{
+ public class ProductPresenter : IPresenter
+ {
+  private readonly IDao<Product> _productDao;
+  public ProductPresenter(IDao<Product> productDao)
+  {
+   _productDao = productDao;
+  }
+  public ProductListView ShowAllProducts()
+   {
+   return new ProductListView("All Products",
+   _productDao.GetAll());
+   }
+  public virtual void Dispose()
+  {
+   _productDao.Dispose();
+  }
+ }
+}
+
+
+
+
+
+
+
+using System.Linq;
+using Ninject.Extensions.NamedScope;
+using Ninject.Modules;
+using SessionPerPresenter.Data;
+namespace SessionPerPresenter
+{
+ public class NinjectBindings : NinjectModule
+ {
+  public override void Load()
+  {
+   const string presenterScope = "PresenterScope";
+   var asm = GetType().Assembly;
+   var presenters =
+   from t in asm.GetTypes()
+   where typeof(IPresenter).IsAssignableFrom(t) &&
+   t.IsClass && !t.IsAbstract
+   select t;
+   foreach (var presenterType in presenters)
+   Kernel.Bind(presenterType)
+   .ToSelf()
+   .DefinesNamedScope(presenterScope);
+   Kernel.Bind<ISessionProvider>()
+   .To<SessionProvider>()
+   .InNamedScope(presenterScope);
+   Kernel.Bind(typeof(IDao<>))
+   .To(typeof(Dao<>));
+  }
+ }
+}
+
+
+
+
+
+
+var sessionFactory = ProductModel
+.CreateExampleSessionFactory(true);
+var kernel = new StandardKernel();
+kernel.Load(new NinjectBindings());
+kernel.Bind<ISessionFactory>()
+.ToConstant(sessionFactory);
+var media1 = kernel.Get<MediaPresenter>();
+var media2 = kernel.Get<MediaPresenter>();
+media1.ShowBooks().Show();
+media2.ShowMovies().Show();
+media1.Dispose();
+media2.Dispose();
+using (var product = kernel.Get<ProductPresenter>())
+ {
+  product.ShowAllProducts().Show();
+ }
+Console.WriteLine("Press any key");
+Console.ReadKey();
+
+
+
+
+
+var session = _sessionProvider.GetCurrentSession();
+try
+{
+  session.SaveOrUpdate(entity);
+}
+catch (StaleObjectStateException)
+{
+  _sessionProvider.DisposeCurrentSession();
+  throw;
+}
+
+
+
+
+
+[AttributeUsage(AttributeTargets.Method,
+AllowMultiple=false)]
+public class NHibernateSessionAttribute 
+: ActionFilterAttribute 
+{
+ public NHibernateSessionAttribute()
+ {
+  Order = 100;
+  }
+ protected ISessionFactory sessionFactory
+ {
+ get
+  {
+   return MvcApplication.SessionFactory;
+  }
+ }
+public override void OnActionExecuting(
+ActionExecutingContext filterContext)
+{
+ var session = sessionFactory.OpenSession();
+ CurrentSessionContext.Bind(session);
+}
+ public override void OnActionExecuted(
+ ActionExecutedContext filterContext)
+{
+ var session = CurrentSessionContext
+ .Unbind(sessionFactory);
+ session.Close();
+}
+}
+
+
+
+public class BookModel
+{
+ public int Id { get; set; }
+ public string Name { get; set; }
+ public string Author { get; set; }
+}
+
+
+
+public class BooksController : Controller
+{
+ [NHibernateSession]
+ public ActionResult Index()
+ {
+  var books = DataAccessLayer.GetBooks()
+  .Select(x=>new BookModel {
+  Id=x.Id, 
+  Name=x.Name,
+  Author= x.Author});
+  return View(books);
+ }
+}
+
+
+
+
+
+
+
+public static class DataAccessLayer
+{
+ public static IEnumerable<Book> GetBooks()
+ {
+  var session = MvcApplication.SessionFactory
+  .GetCurrentSession();
+  using (var tx = session.BeginTransaction())
+  {
+   var books = session.QueryOver<Book>()
+   .List();
+   tx.Commit();
+   return books;
+  }
+ }
+}
+
+
+
+@model IEnumerable<ActionFilterExample.Models.BookModel>
+@{
+ ViewBag.Title = "Books";
+ }
+<h2>Books</h2>
+<ul>
+@foreach (var book in Model)
+{
+ <li>@book.Name - @book.Author</li>
+}
+</ul>
+
+
+
+
+public override void OnActionExecuting(HttpActionContext 
+actionContext)
+{
+ var session = sessionFactory.OpenSession();
+ CurrentSessionContext.Bind(session);
+}
+ public override void OnActionExecuted(HttpActionExecutedContext 
+ actionExecutedContext)
+{
+ var session = CurrentSessionContext.Unbind(sessionFactory);
+ session.Close();
+}
+
+
+
+
+public class NeedsPersistenceAttribute
+: NHibernateSessionAttribute
+{
+  protected ISession session
+  {
+  get
+   {
+    return sessionFactory.GetCurrentSession();
+   }
+  }
+  public override void OnActionExecuting(
+  ActionExecutingContext filterContext)
+  {
+   base.OnActionExecuting(filterContext);
+   session.BeginTransaction();
+  }
+   public override void OnActionExecuted(
+   ActionExecutedContext filterContext)
+   {
+    var tx = session.Transaction;
+    if (tx != null && tx.IsActive)
+    {
+      var noUnhandledException = 
+      filterContext.Exception == null || 
+      filterContext.ExceptionHandled;
+      if (noUnhandledException &&
+      filterContext.Controller.ViewData.ModelState.IsValid)
+      {
+       session.Transaction.Commit();
+      }
+    else
+     {
+      session.Transaction.Rollback();
+     }
+    }
+    base.OnActionExecuted(filterContext);
+  }
+}
+
+
+
+
+
+public class BooksController : Controller
+{
+ [NeedsPersistence]
+ public ActionResult Index()
+ {
+  var books = DataAccessLayer.GetBooks()
+  .Select(x=>new BookModel {
+  Id=x.Id, 
+  Name=x.Name,
+  Author= x.Author});
+ return View(books);
+ }
+}
+
+
+
+
+var session = MvcApplication.SessionFactory
+.GetCurrentSession();
+var books = session.QueryOver<Book>()
+.List();
+return books;
+
+
+Install-Package NHibernate -project SessionRecipes
+
+
+Install-Package NH4CookbookHelpers -project SessionRecipes
+
+
+
+
+Application.Run(new WindowsFormsRunner());
+
+
+
+
+RecipeLoader.DefaultC  onfiguration = new Configuration()
+.DataBaseIntegration(db =>
+{
+ db.Dialect<MsSql2012Dialect>();
+ db.Driver<Sql2008ClientDriver>();
+ db.ConnectionString = 
+ @"Server=.\SQLEXPRESS;Database=NHCookbook;
+ Trusted_Connection=True;";
+});
+
+
+
+using System;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace SessionRecipes.SavingEntities
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISessionFactory 
+  sessionFactory)
+  {
+   PerformSave(sessionFactory);
+   PerformUpdate(sessionFactory);
+   TestFlushMode(sessionFactory, FlushMode.Auto);
+   TestFlushMode(sessionFactory, FlushMode.Commit);
+   TestFlushMode(sessionFactory, FlushMode.Never);
+  }
+  private void PerformSave(ISessionFactory 
+  sessionFactory)
+ {
+  Console.WriteLine("PerformSave");
+  var product = new Product { Name = "PerformSave" };
+  using (var session = sessionFactory.OpenSession())
+  {
+   using (var tx = session.BeginTransaction())
+   {
+    session.Save(product);
+    Console.WriteLine("Id:{0}", product.Id);
+    tx.Commit();
+   }
+  }
+}
+private void PerformUpdate(ISessionFactory 
+sessionFactory)
+{
+  Console.WriteLine("PerformUpdate");
+  Product product;
+  using (var firstSession = sessionFactory
+  .OpenSession())
+{
+  using (var tx = firstSession.BeginTransaction())
+ {
+   product = firstSession.Get<Product>(1);
+  tx.Commit();
+ }
+}
+product.Description += "-Updated by PerformUpdate";
+using (var secondSession = sessionFactory
+.OpenSession())
+ {
+  using (var tx = secondSession.BeginTransaction())
+   {
+    secondSession.Update(product);
+    tx.Commit();
+   }
+  }
+}
+private void TestFlushMode(ISessionFactory 
+sessionFactory, FlushMode flushMode)
+{
+  var name = "TestPublisher" + flushMode;
+  using (var session = sessionFactory.OpenSession())
+  {
+   session.FlushMode = flushMode;
+   using (var tx = session.BeginTransaction())
+   {
+    var publisher = new Publisher { Name = name};
+    Console.WriteLine("Saving {0}", name);
+    session.Save(publisher);
+    Console.WriteLine("Searching for {0}", name);
+    var searchPublisher = session
+    .QueryOver<Publisher>()
+    .Where(x => x.Name == name)
+    .SingleOrDefault();
+    Console.WriteLine(searchPublisher != null ?
+    "Found it!" : "Didn't find it!");
+    tx.Commit();
+   }
+   using (var tx = session.BeginTransaction())
+   {
+    Console.WriteLine(
+    "Searching for {0} again", name);
+    var searchPublisher = session
+    .QueryOver<Publisher>()
+    .Where(x => x.Name == name)
+    .SingleOrDefault();
+    Console.WriteLine(searchPublisher != null ?
+    "Found it!" : "Didn't find it!");
+   }
+  }
+ }
+}
+}
+
+
+
+
+using System;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace SessionRecipes.MergingEntities
+{
+ public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISessionFactory sessionFactory)
+  {
+   var book = CreateAndSaveBook(sessionFactory);
+   book.Name = "Dormice in Action";
+   book.Description = "Hibernation of the Hazel Dormouse";
+   book.UnitPrice = 0.83M;
+   book.ISBN = "0123";
+   using (var session = sessionFactory.OpenSession())
+   {
+    using (var tx = session.BeginTransaction())
+    {
+     var mergedBook = (Book)session.Merge(book);
+     tx.Commit();
+     Console.WriteLine(
+     ReferenceEquals(book, mergedBook));
+    }
+   }
+  }
+private static Book CreateAndSaveBook(
+ISessionFactory sessionFactory)
+{
+  var book = new Book()
+   {
+    Name = "The book of awesomeness",
+    Description = "Pure Awesome",
+    UnitPrice = 50.0M,
+    ISBN = "3043",
+	Author = "Awe Some",
+   };
+using (var session = sessionFactory.OpenSession())
+ {
+   using (var tx = session.BeginTransaction())
+   {
+    session.Save(book);
+    tx.Commit();
+    session.Evict(book);
+   }
+  }
+ return book;
+  }
+ }
+}
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace SessionRecipes.SessionRefresh
+{
+public class Recipe : QueryRecipe
+ {
+  protected override void Run(ISessionFactory sessionFactory)
+  {
+   using (var sessionA = sessionFactory.OpenSession())
+   using (var sessionB = sessionFactory.OpenSession())
+   {
+    int productId;
+	var productA = new Product()
+    {
+     Name = "Lawn Chair",
+     Description = "Lime Green, Comfortable",
+     UnitPrice = 10.00M
+    };
+   using (var tx = sessionA.BeginTransaction())
+    {
+     Console.WriteLine("Saving product in session A.");
+     productId = (int)sessionA.Save(productA);
+     tx.Commit();
+    }
+   using (var tx = sessionB.BeginTransaction())
+    {
+      Console.WriteLine("Changing price in session B.");
+      var productB = sessionB.Get<Product>(productId);
+      productB.UnitPrice = 15.00M;
+      tx.Commit();
+    }
+   using (var tx = sessionA.BeginTransaction())
+    {
+     Console.WriteLine("Price was {0:c}",
+     productA.UnitPrice);
+     Console.WriteLine("Refreshing");
+     sessionA.Refresh(productA);
+     Console.WriteLine("Price is {0:c}",
+     productA.UnitPrice);
+     tx.Commit();
+    }
+   }
+  }
+ }
+}
+
+
+
+
+
+using System;
+using System.Threading;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace SessionRecipes.SessionLock
+{
+ public class Recipe : QueryRecipe
+  {
+   protected override void Run(ISessionFactory 
+   sessionFactory)
+    {
+	  ExecuteWithLockMode(sessionFactory, 
+      LockMode.None,
+      LockMode.None);
+      ExecuteWithLockMode(sessionFactory, 
+      LockMode.Upgrade,
+      LockMode.Upgrade);
+      ExecuteWithLockMode(sessionFactory, 
+      LockMode.UpgradeNoWait, 
+      LockMode.UpgradeNoWait);
+    }
+  private void ExecuteWithLockMode(ISessionFactory 
+  sessionFactory, LockMode lockMode1, 
+  LockMode lockMode2)
+  {
+   Console.WriteLine("Executing with {0} and {1}", 
+   lockMode1, lockMode2);
+   Console.WriteLine();
+   var thread1 = new Thread(() =>
+   GetAndChangeProductInLock(sessionFactory, 
+   lockMode1, 3000)) { 
+   Name = "Thread1"
+     };
+   var thread2 = new Thread(() =>
+   GetAndChangeProductInLock(sessionFactory, 
+   lockMode2, 0)) { 
+   Name = "Thread2"
+    };
+   thread1.Start();
+   Thread.Sleep(300);
+   thread2.Start();
+   thread1.Join();
+   thread2.Join();
+   Console.WriteLine();
+   }
+private void GetAndChangeProductInLock(ISessionFactory
+sessionFactory, LockMode lockMode, int sleepTime)
+{
+ try
+ {
+   using (var session = sessionFactory.OpenSession())
+   {
+    using (var tx = session.BeginTransaction())
+     {
+      var product = session.Get<Product>(1);
+      Console.WriteLine("{0} acquiring lock", 
+      Thread.CurrentThread.Name);
+      session.Lock(product, lockMode);
+      Console.WriteLine("{0} acquired lock", 
+      Thread.CurrentThread.Name);
+      product.Description = 
+      string.Format("Updated in LockMode.{0}",
+      lockMode);
+      Thread.Sleep(sleepTime);
+      Console.WriteLine("{0} committing", 
+      Thread.CurrentThread.Name);
+      tx.Commit();
+      Console.WriteLine("{0} committed", 
+     Thread.CurrentThread.Name);
+     }
+    }
+}
+catch (Exception ex)
+  {
+   Console.WriteLine("Exception in {0}:{1}",
+   Thread.CurrentThread.Name, ex.Message);
+  }
+  }
+ }
+}
+
+
+
+
+session.CreateQuery("from Movie m where m.Director = :director")
+.SetString("director", directorName)
+.SetLockMode("m",LockMode.Upgrade)
+.List<Movie>();
+
+
+
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers;
+using NHibernate;
+using NHibernate.Cfg;
+namespace SessionRecipes.EntityModeMap
+{
+ public class Recipe : HbmMappingRecipe
+ {
+   protected override void Configure(Configuration cfg)
+    {
+     cfg.SetProperty("default_entity_mode", "dynamic-map");
+    }
+   protected override void AddInitialData(ISession session)
+    {
+   var movieActors = new List<Dictionary<string, object>>()
+   new Dictionary<string, object>() {
+   {"Actor","Keanu Reeves"},
+   {"Role","Neo"}
+   },
+  new Dictionary<string, object>() {
+   {"Actor", "Carrie-Ann Moss"},
+   {"Role", "Trinity"}
+   }
+   };
+  var movie = new Dictionary<string, object>()
+  {
+  {"Name", "The Matrix"},
+  {"Description", "Sci-Fi Action film"},
+  {"UnitPrice", 18.99M},
+  {"Director", "Wachowski Brothers"},
+  {"Actors", movieActors}
+  };
+   session.Save("Movie", movie);
+  }
+public override void RunQueries(ISession session)
+{
+  var movies = session
+  .CreateQuery("from Movie").List<IDictionary>();
+  foreach (var movie in movies)
+  {
+    Console.WriteLine("Movie:{0}", movie["Name"]);
+    Console.WriteLine("Actors");
+    foreach (var actor in ((IEnumerable)movie["Actors"]).
+    OfType<IDictionary>())
+    {
+     Console.WriteLine("{0} as {1}", actor["Actor"], 
+     actor["Role"]);
+    }
+   }
+}
+}
+}
+
+
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+ <class entity-name="Product"
+  discriminator-value="Product">
+   <id name="Id" type="Guid">
+     <generator class="guid.comb" />
+  </id>
+  <discriminator column="ProductType" type="String" />
+  <natural-id mutable="true">
+   <property name="Name" not-null="true"
+    type="String" />
+  </natural-id>
+  <version name="Version" type="Int32"/>
+  <property name="Description" type="String" />
+  <property name="UnitPrice" not-null="true"
+   type="Currency" />
+ </class>
+</hibernate-mapping>
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+  <subclass entity-name="Movie" extends="Product"
+   discriminator-value="Movie">
+   <property name="Director" type="String" />
+   <bag name="Actors" cascade="all-delete-orphan">
+     <key column="MovieId" />
+     <one-to-many class="ActorRole"/>
+   </bag>
+  </subclass>
+</hibernate-mapping>
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+ <class entity-name="ActorRole">
+   <id name="Id" type="Guid">
+     <generator class="guid.comb" />
+   </id>
+   <version name="Version" type="Int32" />
+   <property name="Actor" type="String"
+    not-null="true" />
+   <property name="Role" type="String"
+    not-null="true" />
+ </class>
+</hibernate-mapping>
+
+
+
+
+
+using (var pocoSession = sessionFactory.OpenSession())
+{
+  using (var childSession =
+  pocoSession.GetSession(EntityMode.Map))
+  {
+     // Do something here
+  }
+}
+
+
+
+
+
+
+
+using NH4CookbookHelpers.Queries.Model;
+namespace SessionRecipes.UsingTransactionScope
+{
+  public interface IReceiveProductUpdates
+  {
+   void Add(Product product);
+   void Update(Product product);
+   void Remove(Produ  ct product);
+  }
+}
+
+
+
+
+public class WarehouseFacade : IReceiveProductUpdates
+{
+public void Add(Product product)
+{
+  Console.WriteLine("Adding {0} to warehouse system.",
+  product.Name);
+}
+public void Update(Product product)
+{
+  Console.WriteLine("Updating {0} in warehouse system.",
+  product.Name);
+}
+public void Remove(Product product)
+{
+  Console.WriteLine("Removing {0} from warehouse system.",
+  product.Name);
+  var message = string.Format(
+  "Warehouse still has inventory of {0}.",
+  product.Name);
+  throw new ApplicationExcepti  on(message);
+}
+}
+
+
+
+
+public class ProductCatalog : IReceiveProductUpdates
+{
+   private readonly ISessionFactory _sessionFactory;
+   public ProductCatalog(ISessionFactory sessionFactory)
+   {
+     _sessionFactory = sessionFactory;
+   }
+public void Add(Product product)
+  {
+    Console.WriteLine("Adding {0} to product catalog.",
+    product.Name);
+    using (var session = _sessionFactory.OpenSession())
+    using (var tx = session.BeginTransaction())
+     {
+      session.Save(product);
+      tx.Commit();
+     }
+  }
+public void Update(Product product)
+  {
+   Console.WriteLine("Updating {0} in product catalog.",
+   product.Name);
+   using (var session = _sessionFactory.OpenSession())
+   using (var tx = session.BeginTransaction())
+    {
+     session.Update(product);
+     tx.Commit();
+    }
+  }
+public void Remove(Product product)
+ {
+  Console.WriteLine("Removing {0} from product catalog.",
+  product.Name);
+  using (var session = _sessionFactory.OpenSession())
+  using (var tx = session.BeginTransaction())
+   {
+    session.Delete(product);
+	tx.Commit();
+   }
+ }
+}
+
+
+
+
+
+
+
+using System;
+using System.Transactions;
+using NH4CookbookHelpers.Queries.Model;
+namespace SessionRecipes.UsingTransactionScope
+{
+   public class ProductApp
+    {
+      private readonly IReceiveProductUpdates[] _services;
+      public ProductApp(params IReceiveProductUpdates[] services)
+      {
+       _services = services;
+      }
+   public void AddProduct(Product newProduct)
+    {
+     Console.WriteLine("Adding {0}.", newProduct.Name);
+     try
+     {
+      using (var scope = new TransactionScope())
+      {
+       foreach (var service in _services)
+       service.Add(newProduct);
+       scope.Complete();
+      }
+     }
+catch (Exception ex)
+ {
+   Console.WriteLine("Product could not be added.");
+   Console.WriteLine(ex.Message);
+  }
+}
+public void UpdateProduct(Product changedProduct)
+{
+ Console.WriteLine("Updating {0}.",
+ changedProduct.Name);
+try
+{
+ using (var scope = new TransactionScope())
+{
+ foreach (var service in _services)
+ service.Update(changedProduct);
+ scope.Complete();
+}
+}
+catch (Exception ex)
+{
+ Console.WriteLine("Product could not be updated.");
+ Console.WriteLine(ex.Message);
+}
+}
+public void RemoveProduct(Product oldProduct)
+{
+ Console.WriteLine("Removing {0}.",
+ oldProduct.Name);
+try
+{
+ using (var scope = new TransactionScope())
+{
+ foreach (var service in _services)
+ service.Remove(oldProduct);
+ scope.Complete();
+}
+}
+catch (Exception ex)
+{
+ Console.WriteLine("Product could not be removed.");
+ Console.WriteLine(ex.Message);
+}
+}
+}
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+namespace SessionRecipes.UsingTransactionScope
+{
+  public class Recipe : QueryRecipe
+  {
+   protected override void Run(ISessionFactory sessionFactory)
+   {
+    var catalog = new ProductCatalog(sessionFactory);
+    var warehouse = new WarehouseFacade();
+    var p = new ProductApp(catalog, warehouse);
+    var sprockets = new Product()
+     {
+      Name = "Sprockets",
+      Description = "12 pack, metal",
+      UnitPrice = 14.99M
+     };
+   p.AddProduct(sprockets);
+   sprockets.UnitPrice = 9.99M;
+   p.UpdateProduct(sprockets);
+   p.RemoveProduct(sprockets);
+  }
+ }
+}
+
+
+
+
+
+
+

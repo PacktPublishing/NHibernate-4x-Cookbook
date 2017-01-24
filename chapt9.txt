@@ -1,0 +1,701 @@
+Chapter 9: NHibernate Contribution Projects
+
+
+
+Install-Package NHibernate.Validator -Project Eg.AttributeValidation
+
+
+
+
+ [Serializable]
+[AttributeUsage(
+  AttributeTargets.Field | AttributeTargets.Property)]
+public class NotNegativeDecimalAttribute 
+  : DecimalMinAttribute
+{
+
+  public NotNegativeDecimalAttribute()
+    : base(0M)
+  {
+  }
+
+}
+
+
+
+
+public class Product : Entity
+{
+  [NotNull, Length(Min=1, Max=255)]
+  public virtual string Name { get; set; }
+
+  [NotNullNotEmpty]
+  public virtual string Description { get; set; }
+
+ [NotNull, NotNegativeDecimal]
+  public virtual Decimal UnitPrice { get; set; }
+}
+
+
+
+
+
+Install-Package NHibernate
+Install-Package NHibernate.Validator
+Install-Package log4net
+
+
+
+
+<section name="nhv-configuration" type="NHibernate.Validator.Cfg.ConfigurationSectionHandler, NHibernate.Validator" />
+
+
+
+
+<nhv-configuration xmlns="urn:nhv-configuration-1.0">
+<property name='apply_to_ddl'>true</property>
+<property name='autoregister_listeners'>true</property>
+<property name='default_validator_mode'> OverrideExternalWithAttribute</property>
+<mapping assembly='Eg.AttributeValidation'/>
+</nhv-configuration>
+
+
+
+
+public class BasicSharedEngineProvider : 
+  ISharedEngineProvider
+{
+private readonly ValidatorEngine ve;
+
+public BasicSharedEngineProvider(ValidatorEngine ve)
+  {
+    this.ve = ve;
+  }
+
+public ValidatorEngine GetEngine()
+  {
+    return ve;
+  }
+
+public void UseMe()
+  {
+    Environment.SharedEngineProvider = this;
+  }
+}
+
+
+
+
+class Program
+{
+  static void Main(string[] args)
+  {
+    XmlConfigurator.Configure();
+    var log = LogManager.GetLogger(typeof(Program));
+
+    SetupNHibernateValidator();
+
+    var cfg = new Configuration().Configure();
+    cfg.Initialize();
+
+    var sessionFactory = cfg.BuildSessionFactory();
+
+    var schemaExport = new SchemaExport(cfg);
+    schemaExport.Execute(true, true, false);
+
+    var junk = new Product
+                 {
+                   Name = "Spiffy Junk",
+                   Description = "Stuff we can't sell.",
+                   UnitPrice = -1M
+                 };
+
+    using (var session = sessionFactory.OpenSession())
+using (var tx = session.BeginTransaction())
+{
+    try
+      {
+    session.Save(junk);
+      tx.Commit();
+      }
+   catch (InvalidStateException validationException)
+     {
+     var errors =validationException.GetInvalidValues();
+foreach (var error in errors)
+        {
+log.ErrorFormat("Error with property {0}: {1}",
+            error.PropertyName,
+error.Message);
+        }
+tx.Rollback();
+}
+}
+  }
+
+  private static ValidatorEngine GetValidatorEngine()
+  {
+    var validatorEngine = new ValidatorEngine();
+    validatorEngine.Configure();
+    return validatorEngine;
+  }
+
+  private static void SetupNHibernateValidator()
+  {
+    var validatorEngine = GetValidatorEngine();
+    new BasicSharedEngineProvider(validatorEngine).UseMe();
+  }
+}
+
+
+
+var ve = Environment.SharedEngineProvider.GetEngine();
+var invalidValues = ve.Validate(someObject);
+
+
+
+Install-Package NHibernate.Validator
+
+
+
+public class ProductValidator : 
+  ValidationDef<Product>
+{
+
+  public ProductValidator()
+  {
+    Define(p => p.Name)
+      .NotNullableAndNotEmpty()
+      .And.MaxLength(255);
+
+    Define(p => p.Description)
+      .NotNullableAndNotEmpty();
+
+    Define(p => p.UnitPrice)
+      .GreaterThanOrEqualTo(0M)
+      .WithMessage("Unit price can't be negative."); 
+
+  }
+
+}
+
+
+
+Install-Package NHibernate
+Install-Package NHibernate.Validator
+Install-Package log4net
+
+
+
+public class BasicSharedEngineProvider : 
+  ISharedEngineProvider
+{
+
+  private readonly ValidatorEngine ve;
+
+  public BasicSharedEngineProvider(ValidatorEngine ve)
+  {
+    this.ve = ve;
+  }
+
+  public ValidatorEngine GetEngine()
+  {
+    return ve;
+  }
+
+  public void UseMe()
+  {
+    Environment.SharedEngineProvider = this;
+  }
+
+}
+
+
+
+private static void Main(string[] args)
+{
+  XmlConfigurator.Configure();
+  var log = LogManager.GetLogger(typeof (Program));
+
+  SetupNHibernateValidator();
+
+  var nhibernateConfig = new Configuration().Configure();
+  nhibernateConfig.Initialize(); 
+
+  ISessionFactory sessionFactory = nhibernateConfig.BuildSessionFactory();
+
+  var schemaExport = new SchemaExport(nhibernateConfig);
+  schemaExport.Execute(false, true, false);
+
+  var junk = new Product
+  {
+  Name = "Spiffy Junk",
+  Description = string.Empty,
+  UnitPrice = -1M
+  };
+
+  var ve = Environment.SharedEngineProvider.GetEngine();
+  var invalidValues = ve.Validate(junk);
+  foreach (var invalidValue in invalidValues)
+  {
+    log.InfoFormat("{0} {1}",
+      invalidValue.PropertyName,
+      invalidValue.Message);
+  }
+
+}
+
+private static FluentConfiguration GetNhvConfiguration()
+{
+  var nhvConfiguration = new FluentConfiguration();
+  nhvConfiguration
+    .SetDefaultValidatorMode(ValidatorMode.UseExternal)
+    .Register(Assembly.Load("Eg.ClassValidation")
+                .ValidationDefinitions())
+    .IntegrateWithNHibernate
+    .ApplyingDDLConstraints()
+    .And.RegisteringListeners();
+  return nhvConfiguration;
+}
+
+private static ValidatorEngine GetValidatorEngine()
+{
+  var cfg = GetNhvConfiguration();
+  var validatorEngine = new ValidatorEngine();
+  validatorEngine.Configure(cfg);
+  return validatorEngine;
+}
+
+private static void SetupNHibernateValidator()
+{
+  var validatorEngine = GetValidatorEngine();
+  new BasicSharedEngineProvider(validatorEngine).UseMe();
+}
+
+
+
+Define(m => m.Director)
+  .NotNullableAndNotEmpty()
+  .And.MaxLength(255);
+
+Define(m => m.Actors)
+  .HasValidElements();
+
+
+
+
+Install-Package NHibernate.Search
+
+
+
+ [Indexed]
+public class Product : Entity
+{
+[Field]
+  public virtual string Name { get; set; }
+
+  [Field]
+  public virtual string Description { get; set; }
+  public virtual Decimal UnitPrice { get; set; }
+}
+
+
+
+
+ [Indexed]
+public class Book : Product
+{
+[Field(Index = Index.UnTokenized)]
+  public virtual string ISBN { get; set; }
+
+[Field]
+  public virtual string Author { get; set; }
+}
+
+
+
+Install-Package NHibernate.Search
+Install-Package log4net
+
+
+
+
+public class SearchConfiguration
+{
+
+  public ISessionFactory BuildSessionFactory()
+  {
+    var cfg = new Configuration().Configure();
+    SetSearchProps(cfg);
+    AddSearchListeners(cfg);
+    var sessionFactory = cfg.BuildSessionFactory();
+    return sessionFactory;
+  }
+
+  private void SetSearchProps(Configuration cfg)
+  {
+    cfg.SetProperty(
+"hibernate.search.default.directory_provider", 
+      typeof(FSDirectoryProvider)
+      .AssemblyQualifiedName);
+
+    cfg.SetProperty(
+"hibernate.search.default.indexBase",
+"~/Index");
+  }
+
+  private void AddSearchListeners(Configuration cfg)
+  {
+    cfg.SetListener(ListenerType.PostUpdate, 
+      new FullTextIndexEventListener());
+    cfg.SetListener(ListenerType.PostInsert, 
+      new FullTextIndexEventListener());
+    cfg.SetListener(ListenerType.PostDelete, 
+      new FullTextIndexEventListener());
+    cfg.SetListener(ListenerType.PostCollectionRecreate, 
+      new FullTextIndexCollectionEventListener());
+    cfg.SetListener(ListenerType.PostCollectionRemove, 
+      new FullTextIndexCollectionEventListener());
+    cfg.SetListener(ListenerType.PostCollectionUpdate, 
+      new FullTextIndexCollectionEventListener());
+  }
+}
+
+
+
+
+class Program
+{
+  static void Main(string[] args)
+  {
+
+    XmlConfigurator.Configure();
+    var log = LogManager.GetLogger(typeof(Program));
+
+    var cfg = new SearchConfiguration();
+    var sessionFactory = cfg.BuildSessionFactory();
+
+    var theBook = new Book()
+{
+      Name = @"Gödel, Escher, Bach: An Eternal Golden Braid",
+  Author = "Douglas Hofstadter",
+  Description = @"This groundbreaking Pulitzer Prize-winning book sets the standard for interdisciplinary writing, exploring the patterns and symbols in the thinking of mathematician Kurt Godel, artist M.C. Escher, and composer Johann Sebastian Bach.",
+  ISBN = "978-0465026562",
+  UnitPrice = 22.95M
+  };
+
+    var theOtherBook = new Book()
+ {
+  Name = "Technical Writing",
+  Author = "Joe Professor",
+  Description = "College text",
+  ISBN = "123-1231231234",
+   UnitPrice = 143.73M
+};
+
+    var thePoster = new Product()
+{
+  Name = "Ascending and Descending",
+  Description = "Poster of famous Escher print",
+  UnitPrice = 7.95M
+};
+
+    using (var session = sessionFactory.OpenSession())
+using (var tx = session.BeginTransaction())
+{
+session.Delete("from Product");
+tx.Commit();
+    }
+
+    using (var session = sessionFactory.OpenSession())
+using (var tx = session.BeginTransaction())
+    {
+    session.Save(theBook);
+      session.Save(theOtherBook);
+     session.Save(thePoster);
+     tx.Commit();
+}
+
+    var products = GetEscherProducts(sessionFactory);
+    OutputProducts(products, log);
+
+    var books = GetEscherBooks(sessionFactory);
+    OutputProducts(books.Cast<Product>(), log);
+  }
+
+  private static void OutputProducts(
+    IEnumerable<Product> products,
+    ILog log)
+  {
+
+    foreach (var product in products)
+    {
+      log.InfoFormat(
+"Found {0} with price {1:C}",
+product.Name, 
+product.UnitPrice);
+    }
+
+  }
+
+  private static IEnumerable<Product>
+    GetEscherProducts(
+    ISessionFactory sessionFactory)
+  {
+    IEnumerable<Product> results;
+    using (var session = sessionFactory.OpenSession())
+    using (var search = Search.CreateFullTextSession(
+            session))
+using (var tx = session.BeginTransaction())
+  {
+      var queryString = "Description:Escher";
+   var query = search
+.CreateFullTextQuery<Product>(queryString);
+   results = query.List<Product>();
+    tx.Commit();
+}
+    return results;
+  }
+
+  private static IEnumerable<Book> GetEscherBooks(
+    ISessionFactory sessionFactory)
+  {
+    IEnumerable<Book> results;
+    using (var session = sessionFactory.OpenSession())
+    using (var search = Search.CreateFullTextSession(
+             session))
+using (var tx = session.BeginTransaction())
+{
+    var queryString = "Description:Escher";
+      var query = search
+       .CreateFullTextQuery<Book>(queryString);
+    results = query.List<Book>();
+    tx.Commit();
+}
+    return results;
+
+  }
+}
+
+
+
+
+SELECT this_.Id          as Id0_0_,
+       this_.Name        as Name0_0_,
+       this_.Description as Descript4_0_0_,
+       this_.UnitPrice   as UnitPrice0_0_,
+       this_.Director    as Director0_0_,
+       this_.Author      as Author0_0_,
+       this_.ISBN        as ISBN0_0_,
+       this_.ProductType as ProductT2_0_0_
+FROM   Product this_
+WHERE  (this_.Id in ('5933e3ba-3092-4db7-8d19-9daf014b8ce4' /* @p0 */,'05058886-8436-4a1d-8412-9db1010561b5' /* @p1 */))
+
+
+
+
+
+Install-Package NHibernate.Envers
+
+
+
+
+public class Product : Entity
+{
+  public virtual string Name { get; set; }
+  public virtual string Description { get; set; }
+
+  [Audited]
+  public virtual Decimal UnitPrice { get; set; }
+}
+
+
+
+Install-Package NHibernate
+Install-Package NHibernate.Envers
+Install-Package log4net
+
+
+
+class Program
+{
+    static void Main()
+    {
+        XmlConfigurator.Configure();
+
+        var cfg = new Configuration().Configure();
+
+        cfg.IntegrateWithEnvers(
+new AttributeConfiguration());
+
+        var sessionFactory = cfg.BuildSessionFactory();
+
+        var schemaExport = new SchemaExport(cfg);
+        schemaExport.Execute(true, true, false);
+
+        using (var session = sessionFactory.OpenSession())
+        using (var tx = session.BeginTransaction())
+        {
+            session.Delete("from Product");
+            tx.Commit();
+        }
+
+        Guid productId;
+
+        using (var session = sessionFactory.OpenSession())
+        using (var tx = session.BeginTransaction())
+        {
+            productId = (Guid) session.Save(new Product
+            {
+                Name = "A product",
+                Description = "Some product we sell",
+                UnitPrice = 143.73M
+            });
+            tx.Commit();
+        }
+
+        using (var session = sessionFactory.OpenSession())
+        using (var tx = session.BeginTransaction())
+        {
+            var product = session.Get<Product>(productId);
+            product.UnitPrice = 900M;
+            tx.Commit();
+        }
+
+        using (var session = sessionFactory.OpenSession())
+        using (session.BeginTransaction())
+        {
+            var reader = AuditReaderFactory.Get(session);
+            var oldProduct = 
+reader.Find<Product>(productId, 1);
+            Console.WriteLine(
+"Product price at revision 1 is " +
+               oldProduct.UnitPrice);
+        }
+    }
+}
+
+
+
+var enversConf = new FluentConfiguration();
+enversConf.Audit<Product>()
+  .Exclude(x => x.Name)
+  .Exclude(x => x.Description);
+cfg.IntegrateWithEnvers(enversConf);
+
+
+
+
+SELECT * FROM StatePart WHERE Name LIKE 'Texas'
+
+
+
+
+
+Install-Package GeoAPI
+
+
+
+
+public class StatePart
+{
+
+  public virtual int Id { get; protected set; }
+  public virtual string Name { get; protected set; }
+  public virtual float Area { get; protected set; }
+  public virtual float Perimeter { get; protected set; }
+  public virtual IGeometry Geometry { get; protected set; }
+
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+    assembly="Eg.Spatial"
+    namespace="Eg.Spatial">
+<typedef name="Geometry"
+           class="NHibernate.Spatial.Type.GeometryType, 
+           NHibernate.Spatial">
+<param name="srid">4269</param>
+<param name="subtype">GEOMETRY</param>
+</typedef>
+<class name="StatePart"
+         table="StatePart"
+         mutable="false"
+         schema-action="none">
+<id name="Id" column="ID">
+<generator class="assigned" />
+</id>
+<property name="Name" column="NAME"/>
+<property name="Area" column="AREA"/>
+<property name="Perimeter" column="PERIMETER"/>
+<property name="Geometry" type="Geometry"
+              column="geom" />
+</class>
+</hibernate-mapping>
+
+
+
+
+Install-Package NHibernate 
+Install-Package NHibernate.Spatial.MsSql
+Install-Package log4net
+
+
+
+
+<connectionStrings>
+<add name="db" connectionString="Server=.\SQLExpress; Database=Spatial; Trusted_Connection=SSPI"/>
+</connectionStrings>
+
+
+
+<property name="dialect">
+  NHibernate.Spatial.Dialect.MsSql2012GeometryDialect, NHibernate.Spatial.MsSql
+</property>
+
+
+
+static void Main()
+{
+
+  XmlConfigurator.Configure();
+  var log = LogManager.GetLogger(typeof (Program));
+
+  var cfg = new Configuration().Configure();
+
+  cfg.AddAuxiliaryDatabaseObject(
+    new SpatialAuxiliaryDatabaseObject(cfg));
+
+  var sessionFactory = cfg.BuildSessionFactory();
+
+  //Houston, TX 
+  var houstonTX = new Point(-95.383056, 29.762778);
+
+  using (var session = sessionFactory.OpenSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+var query = session.QueryOver<StatePart>()
+        .WhereSpatialRestrictionOn(x => x.Geometry)
+        .Contains(houstonTX);
+      var part = query.SingleOrDefault();
+      if (part == null)
+      {
+        log.InfoFormat("Houston, we have a problem.");
+      }
+      else
+      {
+        log.InfoFormat("Houston is in {0}", 
+          part.Name);
+      }
+      tx.Commit();
+    }
+  }
+
+}
+
+
+
+

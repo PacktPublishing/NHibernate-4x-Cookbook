@@ -1,0 +1,1607 @@
+Chapter 8: Extending NHibernate
+
+
+
+Install-Package NHibernate
+Install-Package log4net
+
+
+public interface IEncryptor
+{
+  string Encrypt(string plainText);
+  string Decrypt(string encryptedText);
+  string EncryptionKey { get; set; }
+}
+
+
+
+public abstract class SymmetricEncryptorBase : IEncryptor
+{
+
+  private readonly SymmetricAlgorithm _cryptoProvider;
+  private byte[] _myBytes;
+
+  protected SymmetricEncryptorBase(
+    SymmetricAlgorithm cryptoProvider)
+  {
+    _cryptoProvider = cryptoProvider;
+  }
+
+  public string EncryptionKey { get; set; }
+
+  public string Encrypt(string plainText)
+  {
+    var bytes = GetEncryptionKeyBytes();
+    using (var memoryStream = new MemoryStream())
+    {
+      var encryptor = _cryptoProvider
+        .CreateEncryptor(bytes, bytes);
+
+      using (var cryptoStream = new CryptoStream(
+        memoryStream, encryptor, CryptoStreamMode.Write))
+      {
+        using (var writer = new StreamWriter(cryptoStream))
+        {
+          writer.Write(plainText);
+          writer.Flush();
+          cryptoStream.FlushFinalBlock();
+          return Convert.ToBase64String(
+            memoryStream.GetBuffer(),
+            0,
+            (int) memoryStream.Length);
+        }
+      }
+    }
+  }
+
+  private byte[] GetEncryptionKeyBytes()
+  {
+    if (_myBytes == null)
+      _myBytes = Encoding.ASCII.GetBytes(EncryptionKey);
+
+    return _myBytes;
+  }
+
+  public string Decrypt(string encryptedText)
+  {
+    var bytes = GetEncryptionKeyBytes();
+    using (var memoryStream = new MemoryStream(
+      Convert.FromBase64String(encryptedText)))
+    {
+      var decryptor = _cryptoProvider
+        .CreateDecryptor(bytes, bytes);
+      using (var cryptoStream = new CryptoStream(
+        memoryStream, decryptor, CryptoStreamMode.Read))
+      {
+        using (var reader = new StreamReader(cryptoStream))
+        {
+          return reader.ReadToEnd();
+        }
+      }
+    }
+  }
+
+}
+
+
+
+public class DESEncryptor : SymmetricEncryptorBase 
+{
+
+  public DESEncryptor()
+    : base(new DESCryptoServiceProvider())
+  { }
+
+}
+
+
+
+public class EncryptedString : 
+  IUserType, 
+  IParameterizedType 
+{
+
+  private IEncryptor _encryptor;
+
+  public object NullSafeGet(
+    IDataReader rs,
+    string[] names,
+    object owner)
+  {
+    //treat for the posibility of null values
+    object passwordString =
+      NHibernateUtil.String.NullSafeGet(rs, names[0]);
+    if (passwordString != null)
+    {
+      return _encryptor.Decrypt((string)passwordString);
+    }
+    return null;
+  }
+
+  public void NullSafeSet(
+    IDbCommand cmd,
+    object value,
+    int index)
+  {
+    if (value == null)
+    {
+      NHibernateUtil.String.NullSafeSet(cmd, null, index);
+      return;
+    }
+
+    string encryptedValue =
+      _encryptor.Encrypt((string)value);
+    NHibernateUtil.String.NullSafeSet(
+      cmd, 
+      encryptedValue, 
+      index);
+  }
+
+  public object DeepCopy(object value)
+  {
+    return value == null 
+      ? null 
+    : string.Copy((string)value);
+  }
+
+  public object Replace(object original,
+    object target, object owner)
+  {
+    return original;
+  }
+
+  public object Assemble(object cached, object owner)
+  {
+    return DeepCopy(cached);
+  }
+
+  public object Disassemble(object value)
+  {
+    return DeepCopy(value);
+  }
+
+  public SqlType[] SqlTypes
+  {
+    get { return new[] { new SqlType(DbType.String) }; }
+  }
+
+  public Type ReturnedType
+  {
+    get { return typeof(string); }
+  }
+
+  public bool IsMutable
+  {
+    get { return false; }
+  }
+
+  public new bool Equals(object x, object y)
+  {
+    if (ReferenceEquals(x, y))
+    {
+      return true;
+    }
+    if (x == null || y == null)
+    {
+      return false;
+    }
+    return x.Equals(y);
+  }
+
+  public int GetHashCode(object x)
+  {
+    if (x == null)
+    {
+      throw new ArgumentNullException("x");
+    }
+    return x.GetHashCode();
+  }
+
+
+  public void SetParameterValues(
+    IDictionary<string, string> parameters)
+  {
+    if (parameters != null)
+    {
+      var encryptorTypeName = parameters["encryptor"];
+      _encryptor = !string.IsNullOrEmpty(encryptorTypeName)
+                ? (IEncryptor) Instantiate(encryptorTypeName)
+                : new DESEncryptor();
+      var encryptionKey = parameters["encryptionKey"];
+      if (!string.IsNullOrEmpty(encryptionKey))
+        _encryptor.EncryptionKey = encryptionKey;
+    }
+    else
+    {
+      _encryptor = new DESEncryptor();
+    }
+  }
+
+  private static object Instantiate(string typeName)
+  {
+    var type = Type.GetType(typeName);
+    return Activator.CreateInstance(type);
+  }
+
+}
+
+
+
+
+    public virtual Guid Id { get; set; }
+    public virtual string Name { get; set; }
+    public virtual Money Balance { get; set; }
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+    assembly="EncryptedStringExample"
+    namespace="EncryptedStringExample">
+  <typedef 
+    name="encrypted"
+    class="EncryptedStringExample.EncryptedString, EncryptedStringExample">
+    <param name="encryptor">
+      EncryptedStringExample.DESEncryptor, 
+      EncryptedStringExample
+    </param>
+    <param name="encryptionKey">12345678</param>
+  </typedef>
+  <class name="Account">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <property name="Name" not-null="true" />
+    <property name="EMail" not-null="true" />
+    <property name="CardNumber" not-null="true" type="encrypted" />
+    <property name="ExpirationMonth" not-null="true" />
+    <property name="ExpirationYear" not-null="true" />
+    <property name="ZipCode" not-null="true" />
+  </class>
+</hibernate-mapping>
+
+
+
+
+
+Install-Package NHibernate
+
+
+
+
+public struct Money : IEquatable<Money>
+{
+  public decimal Amount { get; }
+
+  public string Currency { get; }
+
+  public Money(decimal amount, string currency)
+  {
+    Amount = amount;
+    Currency = currency;
+  }
+
+  public override bool Equals(object obj)
+  {
+    if (ReferenceEquals(null, obj)) return false;
+    return obj is Money && Equals((Money) obj);
+  }
+
+  public bool Equals(Money other)
+  {
+    return Amount == other.Amount && string.Equals(Currency, other.Currency);
+  }
+
+  public override int GetHashCode()
+  {
+    unchecked
+    {
+      return (Amount.GetHashCode()*397) ^ Currency.GetHashCode();
+    }
+  }
+
+  public static bool operator ==(Money left, Money right)
+  {
+    return left.Equals(right);
+  }
+
+  public static bool operator !=(Money left, Money right)
+  {
+    return !left.Equals(right);
+  }
+} 
+
+
+
+
+public class MoneyUserType : ICompositeUserType
+{
+  public object GetPropertyValue(object component, int property)
+  {
+    var money = (Money) component;
+    switch (property)
+    {
+      case 0:
+        return money.Amount;
+      case 1:
+        return money.Currency;
+      default:
+        throw new NotSupportedException();
+    }
+  }
+
+  public void SetPropertyValue(object component, int property, object value)
+  {
+    throw new InvalidOperationException("Money is an immutable object. SetPropertyValue isn't supported.");
+  }
+
+  public new bool Equals(object x, object y)
+  {
+    if (ReferenceEquals(x, y)) return true;
+    if (ReferenceEquals(x, null)) return false;
+    if (ReferenceEquals(y, null)) return false;
+    return x.Equals(y);
+  }
+
+  public int GetHashCode(object x)
+  {
+    var moneyX = (Money) x;
+    return moneyX.GetHashCode();
+  }
+
+  public object NullSafeGet(IDataReader dr, string[] names, ISessionImplementor session, object owner)
+  {
+    var val = (decimal) NHibernateUtil.Decimal.NullSafeGet(dr, names[0], session, owner);
+    var currency = (string) NHibernateUtil.String.NullSafeGet(dr, names[1], session, owner);
+
+    return new Money(val, currency);
+  }
+
+  public void NullSafeSet(IDbCommand cmd, object value, int index, bool[] settable, ISessionImplementor session)
+  {
+    if (value == null)
+      return;
+    var money = (Money) value;
+    var amount = money.Amount;
+    var currency = money.Currency;
+    NHibernateUtil.Double.NullSafeSet(cmd, amount, index, session);
+    NHibernateUtil.String.NullSafeSet(cmd, currency, index + 1, session);
+  }
+
+  public object DeepCopy(object value)
+  {
+    var money = (Money) value;
+    return new Money(money.Amount, money.Currency);
+  }
+
+  public object Disassemble(object value, ISessionImplementor session)
+  {
+    return DeepCopy(value);
+  }
+
+  public object Assemble(object cached, ISessionImplementor session, object owner)
+  {
+    return DeepCopy(cached);
+  }
+
+  public object Replace(object original, object target, ISessionImplementor session, object owner)
+  {
+    throw new NotImplementedException();
+  }
+
+  public string[] PropertyNames
+  {
+    get { return new[] {"Amount", "Currency"}; }
+  }
+
+  public IType[] PropertyTypes
+  {
+    get { return new IType[] {NHibernateUtil.Double, NHibernateUtil.String}; }
+  }
+
+  public Type ReturnedClass
+  {
+    get { return typeof(Money); }
+  }
+
+  public bool IsMutable
+  {
+    get { return false; }
+  }
+} 
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+                   assembly="MoneyExample"
+                   namespace="MoneyExample">
+  <typedef
+    name="money"
+    class="MoneyExample.MoneyUserType, MoneyExample">
+  </typedef>
+  <class name="Account">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <property name="Name" not-null="true" />
+    <property name="Balance" not-null="true" type="money" >
+      <column name="Balance_Amount" not-null="true" />
+      <column name="Balance_Currency" length="3" not-null="true" />
+    </property>
+  </class>
+</hibernate-mapping>
+
+
+
+
+Install-Package NHibernate
+
+
+
+ [Serializable]
+public abstract class GenericWellKnownInstanceType<T, TId> 
+  IUserType where T : class
+{
+
+  private Func<T, TId, bool> findPredicate;
+  private Func<T, TId> idGetter;
+  private IEnumerable<T> repository;
+
+  protected GenericWellKnownInstanceType(
+    IEnumerable<T> repository,
+    Func<T, TId, bool> findPredicate,
+    Func<T, TId> idGetter)
+  {
+    this.repository = repository;
+    this.findPredicate = findPredicate;
+    this.idGetter = idGetter;
+  }
+
+  public Type ReturnedType
+  {
+    get { return typeof(T); }
+  }
+
+  public bool IsMutable
+  {
+    get { return false; }
+  }
+
+  public new bool Equals(object x, object y)
+  {
+    if (ReferenceEquals(x, y))
+    {
+      return true;
+    }
+    if (ReferenceEquals(null, x) || 
+      ReferenceEquals(null, y))
+    {
+      return false;
+    }
+
+    return x.Equals(y);
+  }
+
+  public int GetHashCode(object x)
+  {
+    return (x == null) ? 0 : x.GetHashCode();
+  }
+
+  public object NullSafeGet(IDataReader rs, 
+    string[] names, object owner)
+  {
+    int index0 = rs.GetOrdinal(names[0]);
+    if (rs.IsDBNull(index0))
+    {
+      return null;
+    }
+
+    var value = (TId)rs.GetValue(index0);
+    return repository.FirstOrDefault(x => 
+      findPredicate(x, value));
+  }
+
+  public void NullSafeSet(IDbCommand cmd, 
+    object value, int index)
+  {
+    if (value == null)
+    {
+      ((IDbDataParameter)cmd.Parameters[index])
+        .Value = DBNull.Value;
+    }
+    else
+    {
+      ((IDbDataParameter)cmd.Parameters[index])
+        .Value = idGetter((T)value);
+    }
+  }
+
+  public object DeepCopy(object value)
+  {
+    return value;
+  }
+
+  public object Replace(object original, 
+    object target, object owner)
+  {
+    return original;
+  }
+
+  public object Assemble(object cached, object owner)
+  {
+    return cached;
+  }
+
+  public object Disassemble(object value)
+  {
+    return value;
+  }
+
+  /// <summary>
+  /// The SQL types for the columns 
+  /// mapped by this type. 
+  /// </summary>
+  public abstract SqlType[] SqlTypes { get; }
+
+}
+
+
+
+
+public class StateType 
+  : GenericWellKnownInstanceType<State, string>
+{
+
+  private static readonly SqlType[] sqlTypes = 
+    new[] { SqlTypeFactory.GetString(2)};
+
+  public StateType()
+    : base(new States(), 
+    (entity, id) => entity.PostalCode == id,
+    entity => entity.PostalCode)
+  { }
+
+  public override SqlType[] SqlTypes
+  {
+    get { return sqlTypes; }
+  }
+
+}
+
+
+
+
+ [Serializable]
+public class State
+{
+
+  public virtual string PostalCode { get; private set; }
+  public virtual string Name { get; private set; }
+
+  internal State(string postalCode, string name)
+  {
+    PostalCode = postalCode;
+    Name = name;
+  }
+
+}
+
+
+
+
+public class States : ReadOnlyCollection<State>
+{
+
+  public static State Arizona = new State("AZ", "Arizona");
+  public static State California = 
+    new State("CA", "California");
+  public static State Colorado = new State("CO", "Colorado");
+  public static State Oklahoma = new State("OK", "Oklahoma");
+  public static State NewMexico = 
+    new State("NM", "New Mexico");
+  public static State Nevada = new State("NV", "Nevada");
+  public static State Texas = new State("TX", "Texas");
+  public static State Utah = new State("UT", "Utah");
+
+  public States()
+    : base(new State[] { Arizona, California, Colorado, 
+      Oklahoma, NewMexico, Nevada, Texas, Utah })
+  { }
+
+}
+
+
+
+
+public virtual Guid Id { get; set; }
+public virtual string Line1 { get; set; }
+public virtual string Line2 { get; set; }
+public virtual string City { get; set; }
+public virtual State State { get; set; }
+public virtual string Zip { get; set; }
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+    assembly="WKITExample"
+    namespace="WKITExample">
+  <typedef 
+    class="WKITExample.StateType, WKITExample" 
+    name="State"/>
+  <class name="Address">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <property name="Line1" not-null="true" />
+    <property name="Line2" />
+    <property name="City" not-null="true" />
+    <property name="State" type="State" not-null="true" />
+    <property name ="Zip" not-null="true" />
+  </class>
+</hibernate-mapping>
+
+
+
+
+
+string HashPassword(string email, string password);
+
+
+
+
+public class PasswordHasher : IPasswordHasher 
+{
+
+  private readonly HashAlgorithm _algorithm;
+
+  public PasswordHasher(HashAlgorithm algorithm)
+  {
+    _algorithm = algorithm;
+  }
+
+  public string HashPassword(string email, string password)
+  {
+    var plainText = email + password;
+    var plainTextData = Encoding.Default.GetBytes(plainText);
+    var hash = _algorithm.ComputeHash(plainTextData);
+    return Convert.ToBase64String(hash);
+  }
+
+}
+
+
+
+
+public class UserAccount
+{
+
+  private readonly IPasswordHasher _passwordHasher;
+
+  public UserAccount(IPasswordHasher passwordHasher)
+  {
+    _passwordHasher = passwordHasher;
+  }
+
+  public virtual Guid Id { get; protected set; }
+  public virtual string EMail { get; protected set; }
+  public virtual string HashedPassword { get; protected set; }
+
+  public virtual void SetCredentials(
+    string email, string plainTextPassword)
+  {
+    EMail = email;
+    SetPassword(plainTextPassword);
+  }
+
+  public virtual void SetPassword(string plainTextPassword)
+  {
+    HashedPassword = _passwordHasher.HashPassword(
+      EMail, plainTextPassword);
+  }
+
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+    assembly="IoCByteCode"
+    namespace="IoCByteCode">
+  <class name="UserAccount">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <natural-id>
+      <property name="EMail" not-null="true" />
+    </natural-id>
+    <property name="HashedPassword" not-null="true" />
+  </class>
+</hibernate-mapping>
+
+
+
+
+private static void ConfigureServiceLocator()
+{
+  var kernel = BuildKernel();
+  var sl = new NinjectServiceLocator(kernel);
+  ServiceLocator.SetLocatorProvider(() => sl);
+}
+
+private static IKernel BuildKernel()
+{
+  var kernel = new StandardKernel();
+
+  kernel.Bind<NHibernate.Proxy.IProxyFactory>()
+    .To<NHibernate.ByteCode.Castle.ProxyFactory>()
+    .InSingletonScope();
+
+  kernel.Bind<IPasswordHasher>()
+    .To<PasswordHasherImpl>()
+    .InSingletonScope();
+
+  kernel.Bind<HashAlgorithm>()
+    .To<MD5CryptoServiceProvider>()
+    .InSingletonScope();
+
+  return kernel;
+}
+
+
+
+
+ConfigureServiceLocator();
+NHibernate.Cfg.Environment.BytecodeProvider =
+  new BytecodeProvider();
+var cfg = new Configuration().Configure();
+var sessionFactory = cfg.BuildSessionFactory();
+
+
+
+
+Install-Package NHibernate
+Install-Package log4net
+
+
+
+
+<event type="pre-insert">
+  <listener class="AuditEventListener.EventListener, 
+            AuditEventListener" />
+</event>
+<event type="pre-update">
+  <listener class="AuditEventListener.EventListener, 
+            AuditEventListener" />
+</event>
+<event type="pre-delete">
+  <listener class="AuditEventListener.EventListener, 
+            AuditEventListener" />
+</event>
+
+
+
+
+public interface IAuditLogger 
+{
+
+  void Insert(Entity entity);
+  void Update(Entity entity);
+  Void Delete(Entity entity); 
+
+}
+
+
+
+public class AuditLogger : IAuditLogger 
+{
+
+  private readonly ILog log = 
+    LogManager.GetLogger(typeof(AuditLogger));
+
+  public void Insert(Entity entity)
+  {
+    log.DebugFormat("{0} #{1} inserted.", 
+      entity.GetType(), entity.Id);
+  }
+
+  public void Update(Entity entity)
+  {
+    log.DebugFormat("{0} #{1} updated.", 
+      entity.GetType(), entity.Id);
+  }
+
+  public void Delete(Entity entity)
+  {
+    log.DebugFormat("{0} #{1} deleted.", 
+      entity.GetType(), entity.Id);
+  }
+
+}
+
+
+
+
+public class EventListener :
+  IPreInsertEventListener,
+  IPreUpdateEventListener,
+  IPreDeleteEventListener 
+{
+
+  private readonly IAuditLogger _logger;
+
+  public EventListener()
+    : this(new AuditLogger())
+  { }
+
+  public EventListener(IAuditLogger logger)
+  {
+    _logger = logger;
+  }
+
+  public bool OnPreInsert(PreInsertEvent e)
+  {
+    _logger.Insert(e.Entity as Entity);
+    return false;
+  }
+
+  public bool OnPreUpdate(PreUpdateEvent e)
+  {
+    _logger.Update(e.Entity as Entity);
+    return false;
+  }
+
+  public bool OnPreDelete(PreDeleteEvent e)
+  {
+    _logger.Delete(e.Entity as Entity);
+    return false;
+  }
+
+}
+
+
+
+
+Install-Package NHibernate
+
+
+
+public interface IStampedEntity
+{
+
+  string CreatedBy { get; set; }
+  DateTime CreatedTS { get; set; }
+  string ChangedBy { get; set; }
+  DateTime ChangedTS { get; set; }
+
+}
+
+
+
+public interface IStamper
+{
+
+  void Insert(IStampedEntity entity, object[] state, 
+    IEntityPersister persister);
+  void Update(IStampedEntity entity, object[] oldState,
+    object[] state, IEntityPersister persister);
+
+}
+
+
+
+public class EventListener :
+  IPreInsertEventListener,
+  IPreUpdateEventListener
+{
+
+  private readonly IStamper _stamper;
+
+  public EventListener()
+    : this(new Stamper())
+  { }
+
+  public EventListener(IStamper stamper)
+  {
+    _stamper = stamper;
+  }
+
+  public bool OnPreInsert(PreInsertEvent e)
+  {
+    _stamper.Insert(e.Entity as IStampedEntity,
+      e.State, e.Persister);
+    return false;
+  }
+
+  public bool OnPreUpdate(PreUpdateEvent e)
+  {
+    _stamper.Update(e.Entity as IStampedEntity,
+      e.OldState, e.State, e.Persister);
+    return false;
+  }
+
+
+}
+
+
+
+public abstract class Entity : IStampedEntity 
+{
+
+  public virtual Guid Id { get; protected set; }
+
+  public virtual string CreatedBy { get; set; }
+  public virtual DateTime CreatedTS { get; set; }
+  public virtual string ChangedBy { get; set; }
+  public virtual DateTime ChangedTS { get; set; }
+
+}
+
+
+
+
+public class Product : Entity
+{
+
+  public virtual string Name { get; set; }
+  public virtual string Description { get; set; }
+  public virtual Decimal UnitPrice { get; set; }
+
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+    assembly="Changestamp"
+    namespace="Changestamp">
+  <class name="Product">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <discriminator column="ProductType" />
+    <natural-id>
+      <property name="Name" not-null="true" />
+    </natural-id>
+    <property name="Description" />
+    <property name="UnitPrice" not-null="true" />
+    <property name="CreatedBy" />
+    <property name="CreatedTS" />
+    <property name="ChangedBy" />
+    <property name="ChangedTS" />
+  </class>
+</hibernate-mapping>
+
+
+
+
+public class Stamper : IStamper 
+{
+
+  private const string CREATED_BY = "CreatedBy";
+  private const string CREATED_TS = "CreatedTS";
+  private const string CHANGED_BY = "ChangedBy";
+  private const string CHANGED_TS = "ChangedTS";
+
+  public void Insert(IStampedEntity entity, object[] state, 
+    IEntityPersister persister)
+  {
+    if (entity == null)
+      return;
+    SetCreate(entity, state, persister);
+    SetChange(entity, state, persister);
+  }
+
+  public void Update(IStampedEntity entity, object[] oldState, 
+    object[] state, IEntityPersister persister)
+  {
+    if (entity == null)
+      return;
+    SetChange(entity, state, persister);
+  }
+
+  private void SetCreate(IStampedEntity entity, 
+    object[] state,
+    IEntityPersister persister)
+  {
+    entity.CreatedBy = GetUserName();
+    SetState(persister, state, CREATED_BY, entity.CreatedBy);
+    entity.CreatedTS = DateTime.Now;
+    SetState(persister, state, CREATED_TS, entity.CreatedTS);
+  }
+
+  private void SetChange(IStampedEntity entity, 
+    object[] state, IEntityPersister persister)
+  {
+    entity.ChangedBy = GetUserName();
+    SetState(persister, state, CHANGED_BY, 
+      entity.ChangedBy);
+    entity.ChangedTS = DateTime.Now;
+    SetState(persister, state, CHANGED_TS, 
+      entity.ChangedTS);
+  }
+
+
+  private void SetState(IEntityPersister persister, 
+    object[] state, string propertyName, object value)
+  {
+    var index = GetIndex(persister, propertyName);
+    if (index == -1)
+      return;
+    state[index] = value;
+  }
+
+  private int GetIndex(IEntityPersister persister, 
+    string propertyName)
+  {
+    return Array.IndexOf(persister.PropertyNames, 
+      propertyName);
+  }
+
+  private string GetUserName()
+  {
+    return WindowsIdentity.GetCurrent().Name; 
+  }
+
+}
+
+
+
+
+var cfg = new Configuration().Configure();
+
+var namingStrategy = new NamingStrategy();
+var auditColumnSource = new AuditColumnSource();
+new TriggerAuditing(cfg, namingStrategy,
+  auditColumnSource).Configure();
+
+var sessionFaculty = cfg.BuildSessionFactory();
+
+var se = new NHibernate.Tool.hbm2ddl.SchemaExport(cfg);
+se.Execute(true, true, false);
+
+
+
+new AuditColumn()
+{
+  Name = "AuditTimestamp",
+  Value = new SimpleValue()
+  {
+    TypeName = NHibernateUtil.DateTime.Name
+  },
+  IsNullable = false,
+  IncludeInPrimaryKey = true,
+  ValueFunction = delegate(TriggerActions action)
+  {
+    return "getdate()";
+  }
+};
+
+
+
+
+Install-Package NHibernate
+
+
+
+
+public interface ISoftDeletable
+{
+  bool IsDeleted { get; }
+  DateTime? DeletedAt { get; }
+}
+
+
+
+<event type="delete">
+  <listener class=" SoftDeleteExample.SoftDeleteEventListener, 
+            SoftDeleteExample" />
+</event>
+
+
+
+
+public class SoftDeleteEventListener :
+  DefaultDeleteEventListener
+{
+  protected override void DeleteEntity(
+    IEventSource session,
+    object entity,
+    EntityEntry entityEntry,
+    bool isCascadeDeleteEnabled,
+    IEntityPersister persister,
+    ISet<object> transientEntities)
+  {
+    var deletable = entity as ISoftDeletable;
+    if (deletable != null)
+    {
+      deletable.IsDeleted = true;
+      deletable.DeletedAt = DateTime.UtcNow;
+
+      CascadeBeforeDelete(
+        session,
+        persister,
+        deletable,
+        entityEntry,
+        transientEntities);
+
+      CascadeAfterDelete(
+        session,
+        persister,
+        deletable,
+        transientEntities);
+    }
+    else
+    {
+      base.DeleteEntity(
+        session,
+        entity,
+        entityEntry,
+        isCascadeDeleteEnabled,
+        persister,
+        transientEntities);
+    }
+  }
+}
+
+
+
+public class Order : ISoftDeletable
+{
+  public Order()
+  {
+    OrderLines = new HashSet<OrderLine>();
+  }
+
+  Guid Id { get; set; }
+
+  public virtual DateTime OrderDate { get; set; }
+  public virtual ISet<OrderLine> OrderLines { get; set; }
+
+  public virtual bool IsDeleted { get; set; }
+  public virtual DateTime? DeletedAt { get; set; }
+}
+public class OrderLine : ISoftDeletable
+{
+  Guid Id { get; set; }
+
+  public virtual string ProductName { get; set; }
+  public virtual int Amount { get; set; }
+  public virtual bool IsDeleted { get; set; }
+  public virtual DateTime? DeletedAt { get; set; }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+                   assembly="SoftDeleteExample"
+                   namespace="SoftDeleteExample">
+  <class name="Order" table="`Order`" where="IsDeleted = 0">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <property name="OrderDate" not-null="true" />
+    <property name="IsDeleted" not-null="true"/>
+    <property name="DeletedAt" />
+    <set name="OrderLines" cascade="all-delete-orphan" where="IsDeleted = 0">
+      <key column="OrderId"/>
+      <one-to-many class="OrderLine"/>
+    </set>
+  </class>
+  <class name="OrderLine" where="IsDeleted = 0">
+    <id name="Id">
+      <generator class="guid.comb" />
+    </id>
+    <property name="ProductName" not-null="true" />
+    <property name="Amount" not-null="true" />
+    <property name="IsDeleted" not-null="true"/>
+    <property name="DeletedAt" />
+  </class>
+</hibernate-mapping>
+public class CtxAuditColumnSource : IAuditColumnSource 
+{
+
+
+  public IEnumerable<AuditColumn> 
+    GetAuditColumns(Table dataTable)
+  {
+    var userStamp = new AuditColumn()
+    {
+      Name = "AuditUser",
+      Value = new SimpleValue()
+      {
+        TypeName = NHibernateUtil.String.Name
+      },
+      Length = 127,
+      IsNullable = false,
+      IncludeInPrimaryKey = true,
+      ValueFunction = delegate(TriggerActions action)
+      {
+        return "dbo.fnGetContextData()";
+      }
+    };
+
+    var timeStamp = new AuditColumn()
+    {
+      Name = "AuditTimestamp",
+      Value = new SimpleValue()
+      {
+        TypeName = NHibernateUtil.DateTime.Name
+      },
+      IsNullable = false,
+      IncludeInPrimaryKey = true,
+      ValueFunction = delegate(TriggerActions action)
+      {
+        return "getdate()";
+      }
+    };
+
+    var operation = new AuditColumn()
+    {
+      Name = "AuditOperation",
+      Value = new SimpleValue()
+      {
+        TypeName = NHibernateUtil.AnsiChar.Name
+      },
+      Length = 1,
+      IsNullable = false,
+      IncludeInPrimaryKey = false,
+      ValueFunction = delegate(TriggerActions action)
+      {
+        switch (action)
+        {
+          case TriggerActions.INSERT:
+            return "'I'";
+          case TriggerActions.UPDATE:
+            return "'U'";
+          case TriggerActions.DELETE:
+            return "'D'";
+          default:
+            throw new ArgumentOutOfRangeException("action");
+        }
+      }
+    };
+
+    return new AuditColumn[] {
+      userStamp, timeStamp, operation 
+    };
+
+  }
+
+}
+
+
+
+
+
+
+public interface IContextDataProvider
+{
+
+  string GetData();
+  string GetEmptyData();
+
+}
+
+
+
+public class UsernameContextDataProvider : 
+  IContextDataProvider 
+{
+
+  public string GetData()
+  {
+    return WindowsIdentity.GetCurrent().Name;
+  }
+
+  public string GetEmptyData()
+  {
+    return string.Empty;
+  }
+
+}
+
+
+
+
+public class ContextInfoConnectionDriver : 
+  DriverConnectionProvider 
+{
+
+  private const string COMMAND_TEXT = 
+    "declare @length tinyint\n" +
+    "declare @ctx varbinary(128)\n" +
+    "select @length = len(@data)\n" +
+    "select @ctx = convert(binary(1), @length) + " +
+    "convert(binary(127), @data)\n" +
+    "set context_info @ctx";
+
+
+  public override IDbConnection GetConnection()
+  {
+    var conn = base.GetConnection();
+    SetContext(conn);
+    return conn;
+  }
+
+  public override void CloseConnection(IDbConnection conn)
+  {
+    EraseContext(conn);
+    base.CloseConnection(conn);
+  }
+
+  private void SetContext(IDbConnection conn)
+  {
+    var sl = ServiceLocator.Current;
+    var dataProvider = sl.GetInstance<IContextDataProvider>();
+    var data = dataProvider.GetData();
+    SetContext(conn, data);
+  }
+
+  private void EraseContext(IDbConnection conn)
+  {
+    var sl = ServiceLocator.Current;
+    var dataProvider = sl.GetInstance<IContextDataProvider>();
+    var data = dataProvider.GetEmptyData();
+    SetContext(conn, data);
+  }
+
+  private void SetContext(IDbConnection conn, string data)
+  {
+    var cmd = conn.CreateCommand();
+    cmd.CommandType = CommandType.Text;
+    cmd.CommandText = COMMAND_TEXT;
+
+    var param = cmd.CreateParameter();
+    param.ParameterName = "@data";
+    param.DbType = DbType.AnsiString;
+    param.Size = 127;
+    param.Value = data;
+    cmd.Parameters.Add(param);
+
+    cmd.ExecuteNonQuery();
+  }
+
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+  <database-object>
+    <create>
+      CREATE FUNCTION dbo.fnGetContextData()
+      RETURNS varchar(127)
+      AS
+      BEGIN
+        declare @data varchar(127)
+        declare @length tinyint
+        declare @ctx varbinary(128)
+        select @ctx = CONTEXT_INFO()
+        select @length = convert(tinyint, 
+            substring(@ctx, 1, 1))
+        select @data = convert(varchar(127), 
+            substring(@ctx, 2, 1 + @length))
+        return @data
+      END
+    </create>
+    <drop>DROP FUNCTION dbo.fnGetContextData</drop>
+  </database-object>
+</hibernate-mapping>
+
+
+
+var kernel = new StandardKernel();
+kernel.Bind<IContextDataProvider>()
+  .To<UsernameContextDataProvider>();
+var sl = new NinjectServiceLocator(kernel);
+ServiceLocator.SetLocatorProvider(() => sl);
+
+var namingStrategy = new NamingStrategy();
+var auditColumnSource = new CtxAuditColumnSource();
+var cfg = new Configuration().Configure();
+new TriggerAuditing(cfg, namingStrategy,
+  auditColumnSource).Configure();
+
+var sessionFaculty = cfg.BuildSessionFactory();
+
+var se = new NHibernate.Tool.hbm2ddl.SchemaExport(cfg);
+se.Execute(true, true, false);
+
+
+
+
+
+public class DynamicConnectionProvider : 
+  DriverConnectionProvider
+{
+
+  private const string ANON_CONN_NAME = "db";
+  private const string AUTH_CONN_NAME = "auth_db";
+
+  protected override string ConnectionString
+  {
+    get
+    {
+      var connstrs = ConfigurationManager.ConnectionStrings;
+      var connstr = connstrs[ANON_CONN_NAME];
+      if (IsAuthenticated())
+        connstr = connstrs[AUTH_CONN_NAME];
+      return connstr.ConnectionString;
+    }
+  }
+
+  private bool IsAuthenticated()
+  {
+    var identity = WindowsIdentity.GetCurrent();
+    return identity != null && identity.IsAuthenticated;
+  }
+
+}
+
+
+
+
+<add name="db" connectionString=
+"Server=.\SQLExpress; Database=NHCookbook; 
+User Id=AnonymousUser; Password=p455w0rd"/>
+<add name="auth_db" connectionString=
+"Server=.\SQLExpress; Database=NHCookbook; 
+Trusted_Connection=SSPI"/>
+
+
+
+Install-Package NHibernate
+Install-Package log4net
+
+
+
+public class CustomMsSq2012Dialect:
+  MsSql2012Dialect
+{
+  public CustomMsSq2012Dialect()
+  {
+    RegisterFunction("AddDays",
+      new SQLFunctionTemplate(
+        NHibernateUtil.DateTime,
+        "dateadd(day,?2,?1)"));
+    RegisterFunction("AddHours",
+      new SQLFunctionTemplate(
+        NHibernateUtil.DateTime,
+        "dateadd(hour,?2,?1)"));
+    RegisterFunction("AddMinutes",
+      new SQLFunctionTemplate(
+        NHibernateUtil.DateTime,
+        "dateadd(minute,?2,?1)"));
+    RegisterFunction("AddSeconds",
+      new SQLFunctionTemplate(
+        NHibernateUtil.DateTime,
+        "dateadd(second,?2,?1)"));
+    RegisterFunction("AddMilliseconds",
+      new SQLFunctionTemplate(
+        NHibernateUtil.DateTime,
+        "dateadd(millisecond,?2,?1)"));
+  }
+}
+
+
+
+Install-Package NHibernate
+Install-Package log4net
+
+
+
+
+public static class SqlFunctions
+{
+  [LinqExtensionMethod]
+  public static DateTime AddDays(DateTime dt, int d)
+  {
+    return dt.AddDays(d);
+  }
+
+  [LinqExtensionMethod]
+  public static DateTime AddHours(DateTime dt, int h)
+  {
+    return dt.AddHours(h);
+  }
+
+  [LinqExtensionMethod]
+  public static DateTime AddMinutes(DateTime dt, int m)
+  {
+    return dt.AddMinutes(m);
+  }
+
+  [LinqExtensionMethod]
+  public static DateTime AddSeconds(DateTime dt, int s)
+  {
+    return dt.AddSeconds(s);
+  }
+
+  [LinqExtensionMethod]
+  public static DateTime AddMilliseconds(
+    DateTime dt, 
+    int ms)
+  {
+    return dt.AddMilliseconds(ms);
+  }
+}
+Install-Package NHibernate
+Install-Package log4net
+
+
+
+public class DateTimeFunctionsGenerator
+  : BaseHqlGeneratorForMethod
+{
+  public DateTimeFunctionsGenerator()
+  {
+    SupportedMethods = new[]
+    {
+      ReflectionHelper.GetMethod<DateTime>(
+        d => d.AddDays(0)),
+      ReflectionHelper.GetMethod<DateTimeOffset>(
+        d => d.AddDays(0)),
+      ReflectionHelper.GetMethod<DateTime>(
+        d => d.AddHours(0)),
+      ReflectionHelper.GetMethod<DateTimeOffset>(
+        d => d.AddHours(0)),
+      ReflectionHelper.GetMethod<DateTime>(
+        d => d.AddMinutes(0)),
+      ReflectionHelper.GetMethod<DateTimeOffset>(
+        d => d.AddMinutes(0)),
+      ReflectionHelper.GetMethod<DateTime>(
+        d => d.AddSeconds(0)),
+      ReflectionHelper.GetMethod<DateTimeOffset>(
+        d => d.AddSeconds(0)),
+      ReflectionHelper.GetMethod<DateTime>(
+        d => d.AddMilliseconds(0)),
+      ReflectionHelper.GetMethod<DateTimeOffset>(
+        d => d.AddMilliseconds(0)),
+    };
+  }
+
+  public override HqlTreeNode BuildHql(
+    MethodInfo method,
+    Expression targetObject,
+    ReadOnlyCollection<Expression> arguments,
+    HqlTreeBuilder treeBuilder,
+    IHqlExpressionVisitor visitor)
+  {
+    return treeBuilder.MethodCall(
+      method.Name,
+      visitor.Visit(targetObject).AsExpression(),
+      visitor.Visit(arguments[0]).AsExpression());
+  }
+}
+
+
+
+public class CustomLinqtoHqlGeneratorsRegistry 
+  : DefaultLinqToHqlGeneratorsRegistry
+{
+  public CustomLinqtoHqlGeneratorsRegistry()
+  {
+    this.Merge(new DateTimeFunctionsGenerator());
+  }
+}
+
+
+
+
+cfg.SetProperty(
+    Environment.LinqToHqlGeneratorsRegistry,
+    typeof (CustomLinqtoHqlGeneratorsRegistry).
+      AssemblyQualifiedName)
+
+
+
+

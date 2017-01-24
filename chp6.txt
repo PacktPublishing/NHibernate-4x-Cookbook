@@ -1,0 +1,690 @@
+Chapter 6: Testing
+
+
+Install-Package NHibernateProfiler.Appender
+
+
+
+
+HibernatingRhinos.Profiler.Appender.
+NHibernate.NHibernateProfiler.Initialize();
+
+var nhConfig = new Configuration().Configure();
+var sessionFactory = nhConfig.BuildSessionFactory();
+
+using (var session = sessionFactory.OpenSession())
+{
+  var books = from b in session.Query<Book>()
+              where b.Author == "Jason Dentler"
+              select b;
+
+  foreach (var book in books)
+    Console.WriteLine(book.Name);
+}
+
+
+
+
+
+
+using (var tx = session.BeginTransaction())
+{
+  foreach (var book in books)
+    Console.WriteLine(book.Name);
+  tx.Commit();
+}
+
+
+
+
+
+Install-Package Glimpse.MVC5
+
+
+
+
+Install-Package NHibernate.Glimpse
+
+
+
+<add key="NHibernate.Glimpse.Loggers" value="command,connection,flush,load,transaction"/>
+
+
+
+Install-Package NUnit
+
+
+
+
+Install-Package System.Data.SQLite.Core
+
+
+
+
+
+Install-Package log4net
+
+
+
+
+public class TestConnectionProvider :
+    DriverConnectionProvider
+{
+
+  [ThreadStatic]
+  private static IDbConnection _connection;
+
+  public static void CloseDatabase()
+  {
+    if (_connection != null)
+      _connection.Dispose();
+    _connection = null;
+  }
+
+  public override IDbConnection GetConnection()
+  {
+    if (_connection == null)
+    {
+      _connection = Driver.CreateConnection();
+      _connection.ConnectionString = ConnectionString;
+      _connection.Open();
+    }
+    return _connection;
+  }
+
+  public override void CloseConnection(IDbConnection conn)
+  {
+  }
+}
+
+
+
+
+private const string CONN_STR =
+  "Data Source=:memory:;Version=3;New=True;";
+
+private static readonly Configuration _configuration;
+private static readonly ISessionFactory _sessionFactory;
+
+static NHibernateSessionFactoryProvider()
+{
+  
+  _configuration = new Configuration().Configure()
+    .DataBaseIntegration(db =>
+    {
+      db.Dialect<SQLiteDialect>();
+      db.Driver<SQLite20Driver>();
+      db.ConnectionProvider<TestConnectionProvider>();
+      db.ConnectionString = CONN_STR;
+    })
+    .SetProperty(Environment.CurrentSessionContextClass,
+      "thread_static");
+  
+  var props = _configuration.Properties;
+  if (props.ContainsKey(Environment.ConnectionStringName))
+    props.Remove(Environment.ConnectionStringName);
+
+  _sessionFactory = _configuration.BuildSessionFactory();
+}
+public static Configuration Configuration
+{
+  get { return _configuration; }
+}
+
+public static ISessionFactory SessionFactory
+{
+  get { return _sessionFactory; }
+}
+
+
+
+
+protected static ILog log = new Func<ILog>(() =>
+{
+  log4net.Config.XmlConfigurator.Configure();
+  return LogManager.GetLogger(typeof(BaseFixture));
+}).Invoke();
+
+protected virtual void OnFixtureSetup() { }
+protected virtual void OnFixtureTeardown() { }
+protected virtual void OnSetup() { }
+protected virtual void OnTeardown() { }
+
+[TestFixtureSetUp]
+public void FixtureSetup()
+{
+  OnFixtureSetup();
+}
+
+[TestFixtureTearDown]
+public void FixtureTeardown(){
+  OnFixtureTeardown();
+}
+
+[SetUp]
+public void Setup(){
+  OnSetup();
+}
+
+[TearDown]
+public void Teardown(){
+  OnTeardown();
+}
+
+
+
+
+
+protected ISessionFactory SessionFactory
+{
+  get { return NHibernateSessionFactoryProvider.SessionFactory; }
+}
+
+protected ISession Session
+{
+  get { return SessionFactory.GetCurrentSession(); }
+}
+
+protected override void OnSetup()
+{
+  SetupNHibernateSession();
+  base.OnSetup();
+}
+
+protected override void OnTeardown()
+{
+  TearDownNHibernateSession();
+  base.OnTeardown();
+}
+
+protected void SetupNHibernateSession()
+{
+  TestConnectionProvider.CloseDatabase();
+  SetupContextualSession();
+  BuildSchema();
+}
+
+protected void TearDownNHibernateSession()
+{
+  TearDownContextualSession();
+  TestConnectionProvider.CloseDatabase();
+}
+
+private void SetupContextualSession()
+{
+  var session = SessionFactory.OpenSession();
+  CurrentSessionContext.Bind(session);
+}
+
+private void TearDownContextualSession()
+{
+  var sessionFactory = NHibernateSessionFactoryProvider.SessionFactory;
+  var session = CurrentSessionContext.Unbind(sessionFactory);
+  session.Close();
+}
+
+private void BuildSchema()
+{
+  var cfg = NHibernateSessionFactoryProvider.Configuration;
+  var schemaExport = new SchemaExport(cfg);
+  schemaExport.Create(false, true);
+}
+
+
+
+
+
+[Test]
+public void Movie_cascades_save_to_ActorRole()
+{
+
+  Guid movieId;
+  Movie movie = new Movie()
+  {
+    Name = "Mars Attacks",
+    Description = "Sci-Fi Parody",
+    Director = "Tim Burton",
+    UnitPrice = 12M,
+    Actors = new List<ActorRole>
+      {
+        new ActorRole()
+        {
+          Actor = "Jack Nicholson",
+          Role = "President James Dale"
+        }
+      }
+  };
+
+  using (var session = SessionFactory.OpenSession())
+  using (var tx = session.BeginTransaction())
+  {
+    movieId = (Guid)session.Save(movie);
+    tx.Commit();
+  }
+
+using (var session = SessionFactory.OpenSession())
+  using (var tx = session.BeginTransaction())
+  {
+    movie = session.Get<Movie>(movieId);
+    tx.Commit();
+  }
+
+  Assert.That(movie.Actors.Count == 1);
+}
+
+
+
+
+
+FullUri=file:mydatabase.db?mode=memory&cache=shared 
+
+
+
+
+private static ILog log =
+  LogManager.GetLogger(typeof(SQLiteLoader));
+
+private const string ATTACHED_DB = "asdfgaqwernb";
+
+public void ImportData(
+  SQLiteConnection conn,
+  string sourceDataFile)
+{
+  
+  var tables = GetTableNames(conn);
+  AttachDatabase(conn, sourceDataFile);
+
+  foreach (var table in tables)
+  {
+    var sourceTable = string.Format("{0}.{1}",
+      ATTACHED_DB, table);
+
+    CopyTableData(conn, sourceTable, table);
+  }
+
+  DetachDatabase(conn);
+}
+
+public void ExportData(
+  SQLiteConnection conn,
+  string destinationDataFile)
+{
+  var tables = GetTableNames(conn);
+  AttachDatabase(conn, destinationDataFile);
+
+  foreach (var table in tables)
+  {
+    var destTable = string.Format(
+      "{0}.{1}",
+      ATTACHED_DB, table);
+
+     CopyTableData(conn, table, destTable);
+  }
+  DetachDatabase(conn);
+}
+
+private IEnumerable<string> GetTableNames(
+  SQLiteConnection conn)
+{
+  string tables = SQLiteMetaDataCollectionNames.Tables;
+  DataTable dt = conn.GetSchema(tables);
+  return from DataRow R in dt.Rows
+         select (string)R["TABLE_NAME"];
+}
+
+private void AttachDatabase(
+  SQLiteConnection conn,
+  string sourceDataFile)
+{
+  SQLiteCommand cmd = new SQLiteCommand(conn);
+  cmd.CommandText = String.Format("ATTACH '{0}' AS {1}",
+    sourceDataFile, ATTACHED_DB);
+  log.Debug(cmd.CommandText);
+  cmd.ExecuteNonQuery();
+}
+
+private void CopyTableData(
+  SQLiteConnection conn,
+  string source,
+  string destination)
+{
+  SQLiteCommand cmd = new SQLiteCommand(conn);
+  cmd.CommandText = string.Format(
+    "INSERT INTO {0} SELECT * FROM {1}", 
+    destination, source);
+
+    log.Debug(cmd.CommandText);
+    cmd.ExecuteNonQuery();
+}
+
+
+private void DetachDatabase(SQLiteConnection conn)
+{
+  SQLiteCommand cmd = new SQLiteCommand(conn);
+  cmd.CommandText = string.Format(«DETACH {0}», ATTACHED_DB);
+  log.Debug(cmd.CommandText);
+  cmd.ExecuteNonQuery();
+}
+
+
+
+
+
+protected abstract string GetSQLiteFilename();
+
+protected override void OnSetup()
+{
+  base.OnSetup();
+  var conn = (SQLiteConnection) Session.Connection;
+  new SQLiteLoader().ImportData(conn, GetSQLiteFilename());
+}
+
+
+
+ [Test]
+public void Director_query_should_return_one_movie()
+{
+  var query = Session.QueryOver<Movie>()
+    .Where(m => m.Director == "Tim Burton");
+
+  using (var tx = Session.BeginTransaction())
+  {
+    var movies = query.List<Movie>();
+    Assert.That(movies.Count == 1);
+    tx.Commit();
+  }
+}
+
+
+
+Install-Package FluentNHibernate
+
+
+
+using FluentNHibernate.Testing;
+
+
+
+ [Test]
+public void Product_persistence_test()
+{
+  new PersistenceSpecification<Product>(Session)
+    .CheckProperty(p => p.Name, "Product Name")
+    .CheckProperty(p => p.Description, "Product Description")
+    .CheckProperty(p => p.UnitPrice, 300.85M)
+    .VerifyTheMappings();
+}
+[Test]
+public void ActorRole_persistence_test()
+
+{
+  new PersistenceSpecification<ActorRole>(Session)
+  .CheckProperty(p => p.Actor, "Actor Name")
+  .CheckProperty(p => p.Role, "Role")
+  .VerifyTheMappings();
+}
+
+[Test]
+public void Movie_persistence_test()
+{
+  new PersistenceSpecification<Movie>(Session)
+  .CheckProperty(p => p.Name, "Movie Name")
+  .CheckProperty(p => p.Description, "Movie Description")
+  .CheckProperty(p => p.UnitPrice, 25M)
+  .CheckProperty(p => p.Director, "Director Name")
+  .CheckList(p => p.Actors, new List<ActorRole>()
+  {
+    new ActorRole() { Actor = "Actor Name", Role = "Role" }
+  })
+  .VerifyTheMappings();
+}
+
+
+
+
+
+private static readonly ILog log =
+  LogManager.GetLogger(typeof(Ghostbusters));
+
+private readonly Configuration _configuration;
+private readonly ISessionFactory _sessionFactory;
+private readonly Action<string> _failCallback;
+private readonly Action<string> _inconclusiveCallback;
+
+public Ghostbusters(Configuration configuration,
+ISessionFactory sessionFactory,
+Action<string> failCallback,
+Action<string> inconclusiveCallback)
+{
+  _configuration = configuration;
+  _sessionFactory = sessionFactory;
+  _failCallback = failCallback;
+  _inconclusiveCallback = inconclusiveCallback;
+}
+
+public void Test()
+{
+  var mappedEntityNames = _configuration.ClassMappings
+  .Select(mapping => mapping.EntityName);
+
+  foreach (string entityName in mappedEntityNames)
+    Test(entityName);
+}
+
+public void Test<TEntity>()
+{
+  Test(typeof(TEntity).FullName);
+}
+
+public void Test(string entityName)
+{
+  object id = FindEntityId(entityName);
+  if (id == null)
+  {
+    var msg = string.Format(
+     "No instances of {0} in database.", 
+      entityName);
+    _inconclusiveCallback.Invoke(msg);
+    return;
+  }
+  log.DebugFormat("Testing entity {0} with id {1}", 
+    entityName, id);
+  Test(entityName, id);
+}
+
+public void Test(string entityName, object id)
+{
+  var ghosts = new List<String>();
+  var interceptor = new GhostInterceptor(ghosts);
+
+  using (var session = _sessionFactory.OpenSession(interceptor))
+  using (var tx = session.BeginTransaction())
+  {
+    session.Get(entityName, id);
+    session.Flush();
+    tx.Rollback();
+  }
+
+  if (ghosts.Any())
+    _failCallback.Invoke(string.Join("\n", ghosts.ToArray()));
+}
+
+private object FindEntityId(string entityName)
+{
+  object id;
+  using (var session = _sessionFactory.OpenSession())
+  {
+    var idQueryString = string.Format(
+      "SELECT e.id FROM {0} e", 
+      entityName);
+
+    var idQuery = session.CreateQuery(idQueryString)
+    .SetMaxResults(1);
+
+    using (var tx = session.BeginTransaction())
+    {
+      id = idQuery.UniqueResult();
+      tx.Commit();
+    }
+  }
+  return id;
+}
+
+
+
+
+
+private static readonly ILog log = 
+  LogManager.GetLogger(typeof(GhostInterceptor));
+
+private readonly IList<string> _ghosts;
+private ISession _session;
+
+public GhostInterceptor(IList<string> ghosts)
+{
+  _ghosts = ghosts;
+}
+
+public override void SetSession(ISession session)
+{
+  _session = session;
+}
+
+public override bool OnFlushDirty(
+object entity, object id, object[] currentState,
+object[] previousState, string[] propertyNames, IType[] types)
+{
+  var msg = string.Format("Flush Dirty {0}", 
+    entity.GetType().FullName);
+  log.Error(msg);
+  _ghosts.Add(msg);
+  ListDirtyProperties(entity);
+  return false;
+}
+
+public override bool OnSave(
+object entity, object id, object[] state,
+string[] propertyNames, IType[] types)
+{
+  var msg = string.Format("Save {0}", 
+    entity.GetType().FullName);
+  log.Error(msg);
+  _ghosts.Add(msg);
+  return false;
+}
+
+public override void OnDelete(
+object entity, object id, object[] state,
+string[] propertyNames, IType[] types)
+{
+  var msg = string.Format("Delete {0}", 
+    entity.GetType().FullName);
+  log.Error(msg);
+  _ghosts.Add(msg);
+}
+
+private void ListDirtyProperties(object entity)
+{
+  string className = 
+    NHibernateProxyHelper.GuessClass(entity).FullName;
+
+  var sessionImpl = _session.GetSessionImplementation();
+
+  var persister = 
+    sessionImpl.Factory.GetEntityPersister(className);
+
+  var oldEntry = 
+    sessionImpl.PersistenceContext.GetEntry(entity);
+
+  if ((oldEntry == null) && (entity is INHibernateProxy))
+  {
+    var proxy = entity as INHibernateProxy;
+    object obj = 
+      sessionImpl.PersistenceContext.Unproxy(proxy);
+
+    oldEntry = sessionImpl.PersistenceContext.GetEntry(obj);
+  }
+
+  object[] oldState = oldEntry.LoadedState;
+
+  object[] currentState = persister.GetPropertyValues(entity, 
+    sessionImpl.EntityMode);
+
+  int[] dirtyProperties = persister.FindDirty(currentState, 
+    oldState, entity, sessionImpl);
+
+  foreach (int index in dirtyProperties)
+  {
+    var msg = string.Format(
+      "Dirty property {0}.{1} was {2}, is {3}.",
+      className,
+      persister.PropertyNames[index],
+      oldState[index] ?? "null",
+      currentState[index] ?? "null");
+    log.Error(msg);
+    _ghosts.Add(msg);
+  }
+
+}
+
+
+
+
+
+ [Test]
+public void GhostbustersTest()
+{
+
+  using (var tx = Session.BeginTransaction())
+  {
+
+    Session.Save(new Movie()
+    {
+      Name = "Ghostbusters",
+      Description = "Science Fiction Comedy",
+      Director = "Ivan Reitman",
+      UnitPrice = 7.97M,
+      Actors = new List<ActorRole>()
+      {
+        new ActorRole() 
+        { 
+          Actor = "Bill Murray",
+          Role = "Dr. Peter Venkman"
+        }
+      }
+    });
+
+    Session.Save(new Book()
+    {
+      Name = "Who You Gonna Call?",
+      Description = "The Real Ghostbusters comic series",
+      UnitPrice = 30.00M,
+      Author = "Dan Abnett",
+      ISBN = "1-84576-141-3"
+    });
+
+    tx.Commit();
+  }
+
+  new Ghostbusters(
+    NHibernateSessionFactoryProvider.Configuration,
+    NHibernateSessionFactoryProvider.SessionFactory,
+    new Action<string>(msg => Assert.Fail(msg)),
+    new Action<string>(msg => Assert.Inconclusive(msg))
+  ).Test();
+
+
+}
+
+
+
+
+session.Get(entityName, id);
+session.Flush();
+tx.Rollback();
+
+
+
+
+
+

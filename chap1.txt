@@ -1,0 +1,325 @@
+Chapter 1: Configure and Schema
+
+public class TestClass
+{
+  public virtual int Id { get; set; }
+  public virtual string Name { get; set; }
+}
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<hibernate-configuration xmlns="urn:nhibernate-configuration-2.2">
+  <session-factory>
+    <property name="dialect">
+      NHibernate.Dialect.MsSql2012Dialect, NHibernate
+    </property>
+    <property name="connection.connection_string">
+      Server=.\SQLEXPRESS; Database=NHCookbook; 
+      Trusted_Connection=SSPI
+    </property>
+    <property name="adonet.batch_size">
+      100
+    </property>
+  </session-factory>
+</hibernate-configuration>
+
+
+
+var nhConfig = new Configuration().Configure();
+var sessionFactory = nhConfig.BuildSessionFactory();
+Console.WriteLine("NHibernate Configured!");
+Console.ReadKey();
+
+
+
+var cfgFile = "cookbook.cfg.xml"; 
+var nhConfig = new Configuration().Configure(cfgFile);
+
+
+
+Var assembly = GetType().Assembly;
+var path = "MyApp.cookbook.cfg.xml"; 
+var nhConfig = new Configuration().Configure(assembly, path);
+
+
+Var doc = GetXmlDocumentWithConfig();  var reader = new XmlNodeReader (doc);
+var nhConfig = new Configuration().Configure(reader);
+
+
+
+<configSections>
+  <section name="hibernate-configuration" type="NHibernate.Cfg.ConfigurationSectionHandler, 
+   NHibernate" />
+</configSections>
+
+
+
+<connectionStrings>
+  <add name="db" connectionString="Server=.\SQLEXPRESS; Database=NHCookbook; Trusted_Connection=SSPI"/>
+</connectionStrings>
+
+
+
+<hibernate-configuration xmlns="urn:nhibernate-configuration-2.2">
+  <session-factory>
+    <property name="dialect">
+      NHibernate.Dialect.MsSql2008Dialect, NHibernate
+    </property>
+    <property name="connection.connection_string_name">
+      db
+    </property>
+    <property name="adonet.batch_size">
+      100
+    </property>
+  </session-factory>
+</hibernate-configuration>
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <configSections>
+    <section name="hibernate-configuration" type="NHibernate.Cfg.ConfigurationSectionHandler, 
+      NHibernate" />
+  </configSections>
+  <connectionStrings>
+    <add name="db" connectionString="Server=.\SQLEXPRESS; Database=NHCookbook; Trusted_Connection=SSPI" />
+  </connectionStrings>
+<hibernate-configuration xmlns="urn:nhibernate-configuration-2.2">
+  <session-factory>
+    <property name="dialect">
+      NHibernate.Dialect.MsSql2008Dialect, NHibernate
+    </property>
+    <property name="connection.connection_string_name">
+      db
+    </property>
+    <property name="adonet.batch_size">
+      100
+    </property>
+  </session-factory>
+</hibernate-configuration>
+</configuration>
+
+
+
+
+var nhConfig = new Configuration().Configure();
+var sessionFactory = nhConfig.BuildSessionFactory();
+Console.WriteLine("NHibernate Configured!");
+Console.ReadKey();
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <connectionStrings>
+    <add name="db" connectionString="Server=.\SQLEXPRESS; Database=NHCookbook; Trusted_Connection=SSPI" />
+  </connectionStrings>
+</configuration>
+
+
+
+
+using NHibernate.Cfg;
+using NHibernate.Dialect;
+
+
+
+var nhConfig = new Configuration().DataBaseIntegration(db =>
+{
+  db.Dialect<MsSql2012Dialect>();
+  db.ConnectionStringName = "db";
+  db.BatchSize = 100;
+});
+var sessionFactory = nhConfig.BuildSessionFactory();
+Console.WriteLine("NHibernate Configured!");
+Console.ReadKey();
+
+
+
+db.ConnectionString = @"Connection string here...";
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <connectionStrings>
+    <add name="db" connectionString="Server=.\SQLEXPRESS; Database=NHCookbook; Trusted_Connection=SSPI" />
+  </connectionStrings>
+</configuration>
+
+
+
+
+using FluentNHibernate.Cfg;
+using FluentNHibernate.Cfg.Db;
+
+
+
+
+var config = MsSqlConfiguration.MsSql2012
+  .ConnectionString(connstr => connstr.FromConnectionStringWithKey("db"))
+  .AdoNetBatchSize(100);
+var nhConfig = Fluently.Configure()
+  .Database(config)
+  .BuildConfiguration();
+var sessionFactory = nhConfig.BuildSessionFactory();
+Console.WriteLine("NHibernate configured fluently!");
+Console.ReadKey();
+
+
+
+<section name="log4net"
+type="log4net.Config.Log4NetConfigurationSectionHandler, log4net"/>
+
+
+
+<log4net>
+    <appender name="trace" 
+      type="log4net.Appender.TraceAppender, log4net">
+      <layout type="log4net.Layout.PatternLayout, log4net">
+      <param name="ConversionPattern" 
+       value=" %date %level %message%newline" />
+      </layout>
+    </appender>
+    <root>
+      <level value="ALL" />
+      <appender-ref ref="trace" />
+    </root>
+    <logger name="NHibernate">
+      <level value="INFO" />
+    </logger>
+</log4net>
+
+
+
+log4net.Config.XmlConfigurator.Configure();
+
+
+
+
+using System.IO;
+using log4net;
+namespace MyApp.Project.SomeNamespace
+{
+
+    public class Foo
+    {
+        private static ILog log = LogManag-er.GetLogger(typeof(Foo));
+
+        public string DoSomething()
+        {
+            log.Debug("We're doing something.");
+            try
+            {
+                return File.ReadAllText("cheese.txt");
+            }
+            catch (FileNotFoundException)
+            {
+                log.Error("Somebody moved my cheese.txt");
+                throw;
+            }
+        }
+    }
+}
+
+
+
+
+<logger name="MyApp.Project.SomeNamespace.Foo">
+  <level value="WARN" />
+</logger>
+
+
+
+<logger name="MyApp.Project">
+  <level value="WARN" />
+</logger>
+
+
+
+<logger name="NHibernate.SQL">
+   <level name="DEBUG" />
+</logger>
+
+
+
+<appSettings>
+   <add key="nhibernate-logger" 
+    value = "NHibernate.Logging.CommonLogging.CommonLoggingLoggerFactory, NHibernate.Logging.CommonLogging"/>
+</appSettings>
+
+
+
+using Eg.Core;
+using NHibernate.Mapping.ByCode; 
+using NHibernate.Tool.hbm2ddl;
+
+
+var nhConfig = new Configuration().Configure();
+var mapper=new ConventionModelMapper();
+nhConfig.AddMapping(mapper.CompileMappingFor(new[] {typeof (TestClass)}));
+
+var schemaExport = new SchemaExport(nhConfig);
+schemaExport.Create(false, true);
+
+Console.WriteLine("The tables have been created"));
+Console.ReadKey();
+
+
+
+using Eg.Core;
+using NHibernate.Mapping.ByCode; 
+using NHibernate.Tool.hbm2ddl;
+
+
+
+var nhConfig = new Configuration().Configure();
+var mapper = new ConventionModelMapper();
+nhConfig.AddMapping(mapper.CompileMappingFor(new[] { typeof(TestClass) }));
+
+var schemaExport = new SchemaExport(nhConfig);
+schemaExport
+    .SetOutputFile(@"db.sql")
+    .Execute(false, false, false);
+
+Console.WriteLine("An sql file has been generated at {0}",
+                  Path.GetFullPath("db.sql"));
+Console.ReadKey();
+
+
+
+
+using Eg.Core;
+using NHibernate.Mapping.ByCode; 
+using NHibernate.Tool.hbm2ddl;
+
+
+
+
+var nhConfig = new Configuration().Configure();
+var mapper = new ConventionModelMapper();
+nhConfig.AddMapping(mapper.CompileMappingFor(new[] { typeof(TestClass) }));
+var update = new SchemaUpdate(nhConfig);
+update
+    .Execute(false, true);
+Console.WriteLine("The tables have been updated");
+Console.ReadKey();
+
+
+
+nst /c:hibernate.cfg.xml /a:Eg.Core.dll /o:Create.
+
+
+
+
+
+
+
+
+
+
+
+
+

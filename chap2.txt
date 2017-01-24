@@ -1,0 +1,2320 @@
+﻿Chapter 2: Models and Mappings
+
+
+Install-Package NH4CookbookHelpers -Project MappingRecipes
+
+
+
+using System;
+namespace Eg.Co  re
+{
+ public abstract class Entity
+  {
+   public virtual Guid Id { get; protected set; }
+  }
+}
+
+
+
+using System;
+namespace Eg.Co  re
+{
+  public class Product : Entity 
+ {
+   public virtual string Name { get; set; }
+   public virtual string Description { get; set; }
+   public virtual decimal UnitPrice { get; set; }
+ }
+}
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg.Core"
+ namespace="Eg.Core">
+ <class name="Product">
+  <id name="Id">
+   <generator class="guid.comb" />
+  </id>
+  <property name="Name" not-null="true" />
+  <property name="Description" />
+  <property name="UnitPrice" not-null="true" 
+   type="Currency" />
+ </class>
+</hibernate-mapping>
+
+
+
+using Eg.Core;
+using NH4CookbookHelpers;
+using NHibernate;
+using NHibernate.Cfg;
+namespace MappingRecipes.MappingWithXml
+{
+  public class Recipe : BaseMappingRecipe
+   {
+    protected override void Configure(Configuration cfg)
+     {
+      cfg.AddAssembly(typeof(Product).Assembly);
+     }
+       public override void AddInitialData(ISession session)
+        {
+          session.Save(new Product
+           {
+            Name = "Car",
+            Description = "A nice red car",
+            UnitPrice = 300
+           });
+        }
+   }
+}
+
+
+
+public virtual Guid Id { get; protected set; }
+
+
+
+
+<natural-id mutable="true">
+  <property name="UserName" not-null="true" />
+</natural-id>
+
+
+
+namespace Eg.Core
+{
+  public class Book : Product
+   {
+    public virtual string ISBN { get; set; }
+    public virtual string Author { get; set; }
+   }
+}
+
+
+
+
+namespace Eg.Core
+{
+ public class Movie : Product 
+  {
+   public virtual string Director { get; set; }
+  }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg.Core"
+ namespace="Eg.Core">
+ <class name="Product">
+   <id name="Id">
+     <generator class="guid.comb" />
+   </id>
+     <discriminator column="ProductType" />
+     <natural-id mutable="true">
+       <property name="Name" not-null="true" />
+     </natural-id>
+     <property name="Description" />
+     <property name="UnitPrice" not-null="true" />
+ </class>
+</hibernate-mapping>
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg  .Core"
+ namespace="Eg.Core">
+  <subclass name="Book" extends="Product">
+   <property name="Author"/>
+   <property name="ISBN"/>
+  </subclass>
+</hibernate-mapping>
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg  .Core"
+ namespace="Eg.Core">
+ <subclass name="Movie" extends="Product">
+   <property name="Director" />
+ </subclass>
+</hibernate-mapping>
+
+
+
+public class Recipe : BaseMappingRecipe
+{
+ protected override void Configure(Configuration cfg)
+ {
+  cfg.AddAssembly(typeof(Product).Assembly);
+ }
+ protected override void AddInitialData(
+ ISession session)
+ {
+  session.Save(new Book
+   {
+    Name = "NHibernate Cookbook", ISBN = "12334"
+   });
+  session.Save(new Movie
+   {
+    Name = "Intouchables", 
+    Director = "Olivier Nakache"
+   });
+  }
+ public override void RunQueries(ISession session)
+ {
+  session.CreateQuery("from Product")
+  .List<Product>();
+ }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg.Core"
+ namespace="Eg.Core">
+ <joined-subclass name="Movie" extends="Product">
+  <key column="Id" />
+  <property name="Director" />
+ </joined-subclass>
+</hibernate-mapping>
+
+
+
+INSERT INTO Product(Name, Description, UnitPrice, Id) 
+ VALUES (@p0, @p1, @p2, @p3);
+INSERT INTO Book (Author, ISBN, Id)
+ VALUES (@p0, @p1, @p2);
+INSERT INTO Product(Name, Description, UnitPrice, Id) 
+ VALUES (@p0, @p1, @p2, @p3);
+INSERT INTO Movie(Director, Id) 
+ VALUES (@p0, @p1);
+
+
+
+
+SELECT
+ product0_.Id AS Id0_,
+ product0_.Name AS Name0_,
+ product0_.Description AS Descript3_0_,
+ product0_.UnitPrice AS UnitPrice0_,
+ product0_1_.Author AS Author1_,
+ product0_1_.ISBN AS ISBN1_,
+ product0_2_.Director AS Director2_,
+CASE 
+ WHEN product0_1_.Id IS NOT NULL THEN 1 
+ WHEN product0_2_.Id IS NOT NULL THEN 2 
+ WHEN product0_.Id IS NOT NULL THEN 0 
+END AS clazz_ 
+FROM
+Product product0_ 
+LEFT OUTER JOIN
+Book product0_1_ 
+ON product0_.Id=product0_1_.Id 
+LEFT OUTER JOIN
+Movie product0_2_ 
+ON product0_.Id=product0_2_.Id
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg.Core"
+ namespace="Eg.Core">
+ <union-subclass name="Movie" extends="Product">
+  <property name="Director" />
+ </union-subclass>
+</hibernate-mapping>
+
+
+
+INSERT INTO Book (Name, Description, UnitPrice, Author, ISBN, Id) 
+ VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+INSERT INTO Movie (Name, Description, UnitPrice, Director, Id) 
+ VALUES (@p0, @p1, @p2, @p3, @p4);
+
+
+
+SELECT 
+ product0_.Id AS Id0_,
+ product0_.Name AS Name0_,
+ product0_.Description AS Descript3_0_,
+ product0_.UnitPrice AS UnitPrice0_,
+ product0_.Author AS Author1_,
+ product0_.ISBN AS ISBN1_,
+ product0_.Director AS Director2_,
+ product0_.clazz_ AS clazz_ 
+FROM
+(SELECT
+[columns snipped…]
+0 AS clazz_ 
+FROM
+Product 
+UNION
+SELECT
+[columns snipped…]
+1 AS clazz_ 
+FROM
+Book 
+UNION
+SELECT
+[columns snipped…]
+2 AS clazz_ 
+FROM
+Movie 
+) product0_
+
+
+
+public virtual Guid Id { get; protected set; }
+public virtual string Lines { get; set; }
+public virtual string City { get; set; }
+public virtual string State { get; set; }
+public virtual string ZipCode { get; set; }
+
+
+
+public virtual string Name { get; set; }
+public virtual Address BillingAddress { get; set; }
+public virtual Address ShippingAddress { get; set; }
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace=" MappingRecipes.Components">
+ <class name="Customer">
+  <id name="Id">
+    <generator class="guid.comb" />
+  </id>
+  <property name="Name" not-null="true" />
+ <component name="BillingAddress" class="Address">
+  <property name="Lines" not-null="true" 
+   column="BillingLines" />
+  <property name="City" not-null="true" 
+   column="BillingCity" />
+  <property name="State" not-null="true" 
+   column="BillingState" />
+  <property name ="ZipCode" not-null="true" 
+   column="BillingZipCode" />
+ </component>
+ <component name="ShippingAddress" class="Address">
+ <property name="Lines" not-null="true" 
+  column="ShippingLines" />
+ <property name="City" not-null="true" 
+  column="ShippingCity" />
+ <property name="State" not-null="true" 
+  column="ShippingState" />
+ <property name ="ZipCode" not-null="true" 
+  column="ShippingZipCode" />
+ </component>
+ </class>
+</hibernate-mapping>
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.Components
+{
+  public class Recipe : HbmMappingRecipe
+   {
+    protected override void AddInitialData(ISession session)
+     {
+      session.Save(new Customer
+       {
+        Name = "Max Weinberg",
+        BillingAddress = new Address
+         {
+          Lines = "E Street 1",
+          City = "Belmar",
+          State = "New Jersey",
+          ZipCode = "123"
+         },
+        ShippingAddress = new Address
+         {
+          Lines = "Home street",
+          City = "Newark",
+          State = "New Jersey",
+          ZipCode = "123"
+         }
+       });
+     }
+   public override void RunQueries(ISession session)
+   {
+    var customer = session.QueryOver<Customer>()
+    .SingleOrDefault();
+    Console.WriteLine(
+    "Customer {0} has a billing address in {1}",
+    customer.Name, customer.BillingAddress.City);
+   }
+  }
+}
+
+
+
+namespace Eg.Core
+{
+  public class ActorRole : Entity 
+   {
+    public virtual string Actor { get; set; }
+    public virtual string Role { get; set; }
+   }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="Eg.Core"
+ namespace="Eg.Core">
+ <class name="ActorRole">
+   <id name="Id">
+    <generator class="guid.comb" />
+   </id>
+   <property name="Actor" not-null="true" />
+   <property name="Role" not-null="true" />
+ </class>
+</hibernate-mapping>
+
+
+
+namespace Eg.Core
+{
+ public class Movie : Product 
+ {
+  public virtual string Director { get; set; }
+  public virtual IList<ActorRole> Actors { get; set; }
+ }
+}
+
+
+
+
+<subclass name="Movie" extends=  "Product">
+<property name="Director" />
+   <list name="Actors" cascade="all-delete-orphan">
+     <key column="MovieId" />
+     <index column="ActorIndex" />
+     <one-to-many class="ActorRole"/>
+   </list>
+</subclass>
+
+
+
+public class Recipe : BaseMappingRecipe
+{
+  protected override void Configure(Configuration cfg)
+   {
+     cfg.AddAssembly(typeof(Product).Assembly);
+   }
+}
+
+
+
+
+
+protected override void AddInitialData(ISession session)
+{
+session.Save(new Movie
+{
+Name = "Hibernation",
+Description = 
+"The countdown for the lift-off has begun",
+UnitPrice = 300,
+Actors=new List<ActorRole>
+{
+new ActorRole
+{
+Actor = "Adam Quintero",
+Role = "Joseph Wood"
+}
+} 
+});
+}
+
+
+
+
+
+<list name="Actors" cascade="all-delete-orphan" >
+ <key column="MovieId" not-null="true"/>
+ <index column="ActorIndex" />
+ <one-to-many class="ActorRole"/>
+</list>
+
+
+
+
+select 
+ movie0_.Id as Id1_, 
+ movie0_.Name as Name1_, 
+ movie0_.Description as Descript4_1_, 
+ movie0_.UnitPrice as UnitPrice1_, 
+ movie0_.Director as Director1_ 
+ from Product movie0_
+where 
+ movie0_.ProductType='Eg.Core.Movie' and 
+ movie0_.Id = 'a2c42861-9ff0-4546-85c1-9db700d6175e'
+ 
+ 
+ 
+ foreach (var actor in movie.Actors)
+ Console.WriteLine(actor.Actor);
+ 
+ 
+ SELECT 
+  actors0_.MovieId as MovieId1_, 
+  actors0_.Id as Id1_, 
+  actors0_.ActorIndex as ActorIndex1_, 
+  actors0_.Id as Id0_0_, 
+  actors0_.Actor as Actor0_0_, 
+  actors0_.Role as Role0_0_ 
+FROM ActorRole actors0_ 
+WHERE 
+  actors0_.MovieId='a2c42861-9ff0-4546-85c1-9db700d6175e'
+  
+  
+  
+Suppose our ActorRoleclass had a reference back to Movie, similar to the following code:
+public class ActorRole : Entity
+{
+  public virtual string Actor { get; set; }
+  public virtual string Role { get; set; }
+  public virtual Movie Movie { get; set; }
+}
+
+
+
+<bag name="Actors">
+ <key column="MovieId"/>
+ <one-to-many class="ActorRole"/>
+</bag>
+
+
+
+<idBag name="Actors">
+ <collection-id column="ActorRoleBagId" type="Int64">
+  <generator class="hilo" />
+ </collection-id>
+ <key column="MovieId"/>
+ <one-to-many class="ActorRole"/>
+</idBag>
+
+
+
+<list name="Actors">
+ <key column="MovieId" />
+ <list-index column="ActorRoleIndex" />
+ <one-to-many class="ActorRole"/>
+</list>
+
+
+
+<set name="Actors">
+ <key column="MovieId" />
+ <one-to-many class="ActorRole"/>
+</set>
+
+
+
+<map name="Actors" >
+  <key column="MovieId" />
+  <map-key column="Role" type="string" />
+  <element column="Actor" type="string"/>
+</map>
+
+
+
+<map name="SomeProperty">
+  <key column="Id" />
+  <index-many-to-many class="KeyEntity"/>
+  <many-to-many class="ValueEntity" />
+</map>
+
+
+
+public class Student
+{
+ public virtual Guid Id { get; protected set; }
+ public virtual string Name { get; set; }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.ManyToMany">
+ <class name="Student">
+  <id name="Id">
+    <generator class="guid.comb"/>
+  </id>
+  <property name="Name"/>
+ </class>
+</hibernate-mapping>
+
+
+
+public class Course
+{
+ public Course()
+  {
+   Students=new HashSet<Student>();
+  }
+ public virtual Guid Id { get; protected set; }
+ public virtual string Name { get; set; }
+ public virtual ISet<Student> Students { get; set; }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.ManyToMany">
+ <class name="Course">
+  <id name="Id">
+    <generator class="guid.comb"/>
+  </id>
+  <property name="Name"/>
+  <set name="Students" table="CourseStudent">
+    <key column="CourseId"/>
+    <many-to-many class="Student" column="StudentId"/>
+  </set>
+ </class> 
+</hibernate-mapping>
+
+
+
+
+public class Recipe : HbmMappingRecipe
+{
+  private Guid _frenchId;
+  protected override void AddInitialData(
+  ISession session)
+  {
+    var anna = new Student { Name = "Anna" };
+    var george = new Student { Name = "George" };
+    var english = new Course { Name = "English" };
+    var french = new Course { Name = "French" };
+    english.Students.Add(anna);
+    french.Students.Add(anna);
+    french.Students.Add(george);
+    session.Save(anna);
+    session.Save(george);
+    session.Save(english);
+    session.Save(french);
+    _frenchId = french.Id;
+  }
+ public override void RunQueries(ISession session)
+  {
+   var course2 = session.Get<Course>(_frenchId);
+   Console.WriteLine("Course name: " + course2.Name);
+   Console.WriteLine("Student count: " + 
+   course2.Students.Count());
+  }
+}
+
+
+
+public class Customer
+{
+  public Customer()
+  {
+   Addresses=new List<Address>();
+   Tags=new HashSet<string>();
+  }
+   public virtual Guid Id { get; protected set; }
+   public virtual string Name { get; set; }
+   public virtual IList<Address> Addresses { get; set; }
+   public virtual ISet<string> Tags { get; set; }
+}
+
+
+
+
+
+public class Address
+{
+  public string AddressLine1 { get; set; }
+  public string AddressLine2 { get; set; }
+  public string City { get; set; }
+  public string PostalCode { get; set; }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.ComponentCollections">
+ <class name="Customer">
+  <id name="Id">
+    <generator class="guid.comb"/>
+  </id>
+  <property name="Name"/>
+  <list name="Addresses" table="CustomerAddress">
+   <key column="CustomerId"/>
+   <index column="AddressIndex"/>
+   <composite-element class="Address">
+   <property name="AddressLine1"/>
+   <property name="AddressLine2"/>
+   <property name="City"/>
+   <property name="PostalCode"/>
+   </composite-element>
+  </list>
+  <set name="Tags" table="CustomerTag">
+   <key column="CustomerId"/>
+   <element column="Tag" type="string"/>
+  </set>
+ </class>
+</hibernate-mapping>
+
+
+
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.ComponentCollections
+ {
+  public class Recipe : HbmMappingRecipe
+   {
+    protected override void AddInitialData(ISession session)
+     {
+       session.Save(new Customer
+        {
+          Name = "Max Weinberg",
+          Addresses =
+           {
+            new Address
+             {
+               AddressLine1 = "E Street 1", 
+               City = "Belmar, NJ"
+             },
+            new Address
+             {
+               AddressLine1 = "Home street",
+               City = "Newark, NJ"
+             }
+           },
+          Tags = { "Drummer", "Bruce" }
+        });
+     }
+   }
+ }
+ 
+ 
+ 
+ 
+public abstract class Entity<TId>
+ {
+  public virtual TId Id { get; protected set; }
+  public override bool Equals(object obj)
+  {
+   return Equals(obj as Entity<TId>);
+  }
+  private static bool IsTransient(Entity<TId> obj)
+   {
+    return obj != null &&
+    Equals(obj.Id, default(TId));
+   }
+  private Type GetUnproxiedType()
+   {
+    return GetType();
+   }
+  public virtual bool Equals(Entity<TId> other)
+   {
+    if (other == null)
+    return false;
+    if (ReferenceEquals(this, other))
+    return true;
+    if (!IsTransient(this) &&
+    !IsTransient(other) &&
+    Equals(Id, other.Id))
+     {
+      var otherType = other.GetUnproxiedType();
+      var thisType = GetUnproxiedType();
+      return thisType.IsAssignableFrom(otherType) ||
+      otherType.IsAssignableFrom(thisType);
+     }
+    return false;
+   }
+  public override int GetHashCode()
+   {
+    if (Equals(Id, default(TId)))
+    return base.GetHashCode();
+    return Id.GetHashCode();
+   }
+ }
+ 
+ 
+ 
+ public class Employee : Entity<Guid>
+{
+  public virtual string FirstName {get;set;}
+  public virtual string LastName {get;set;}
+}
+
+
+
+public class VersionedProduct
+{
+  public virtual int Id { get; protected set; }
+  public virtual int Version { get; protected set; }
+  public virtual string Name { get; set; }
+  public virtual string Description { get; set; }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.Versioning">
+ <class name="VersionedProduct">
+  <id name="Id">
+    <generator class="native"/>
+  </id>
+  <version name="Version" />
+  <property name="Name"/>
+  <property name="Description"/>
+ </class>
+</hibernate-mapping>
+
+
+
+
+public class Recipe : HbmMappingRecipe
+{
+  protected override void AddInitialData(ISession session)
+  {
+   session.Save(new VersionedProduct
+   {
+    Name = "Stuff",
+    Description = "Cool"
+   });
+  }
+  public override void RunQueries(
+  ISessionFactory sessionFactory)
+  {
+   try
+   {
+    using (var s1 = sessionFactory.OpenSession())
+    using (var s2 = sessionFactory.OpenSession())
+    using (var tx1 = s1.BeginTransaction())
+    using (var tx2 = s2.BeginTransaction())
+     {
+      var product1 = s1.Get<VersionedProduct>(1);
+      var product2 = s2.Get<VersionedProduct>(1);
+      product1.Name = "Modified in session 1";
+      product2.Name = "Modified in session 2";
+      tx1.Commit();
+      Console.WriteLine("Commit 1");
+      //This should fail
+      tx2.Commit();
+      Console.WriteLine("Commit 2");
+     }
+   }
+  catch (Exception ex)
+   {
+     Console.Error.WriteLine(ex);
+   }
+}
+
+
+
+UPDATE Versioned
+SET Version = 2,
+Name = 'Modified in session 1'
+WHERE Id = 1 
+AND Version = 1 
+
+
+
+<class name="Product" 
+dynamic-update="true" 
+optimistic-lock="dirty">
+
+
+
+UPDATE VersionedProduct
+SET Name = 'Junk'
+WHERE Id = 1
+AND Name = 'Stuff'
+
+
+
+UPDATE VersionedProduct
+SET Name = 'Junk' /* @p0 */
+WHERE Id = 1
+AND Name = 'Stuff'
+AND Description = 'Cool'
+
+
+
+
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate.Mapping.ByCode;
+using NHibernate.Mapping.ByCode.Conformist;
+namespace MappingRecipes.MappingByCode
+{
+  public class ProductMapping : ClassMapping<Product>
+   {
+    public ProductMapping()
+    {
+     Table("Product");
+     Id(x => x.Id, x => x.Generator(Generators.GuidComb));
+     Version(p => p.Version, v => v.UnsavedValue(0));
+     Discriminator(p=>p.Column("ProductType"));
+     Property(p => p.Name);
+     Property(p => p.Description);
+     Property(p => p.UnitPrice);
+    }
+   }
+}
+
+
+
+
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate.Mapping.ByCode;
+using NHibernate.Mapping.ByCode.Conformist;
+namespace MappingRecipes.MappingByCode
+{
+ public class MovieMapping : SubclassMapping<Movie>
+ {
+  public MovieMapping()
+  {
+   DiscriminatorValue("Movie");
+   Property(x => x.Director);
+   List(x => x.Actors, x =>
+     {
+        x.Key(k => k.Column("MovieId"));
+        x.Index(i => i.Column("ActorIndex"));
+        x.Cascade(Cascade.All | Cascade.DeleteOrphans);
+     }
+       , x => x.OneToMany()
+       );
+  }
+ }
+}
+
+
+
+
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate.Mapping.ByCode.Conformist;
+namespace MappingRecipes.MappingByCode
+{
+  public class BookMapping : SubclassMapping<Book>
+  {
+   public BookMapping()
+   {
+    DiscriminatorValue("Book");
+    Property(x => x.Author);
+    Property(x => x.ISBN);
+   }
+  }
+}
+
+
+
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate.Mapping.ByCode;
+using NHibernate.Mapping.ByCode.Conformist;
+namespace MappingRecipes.MappingByCode
+{
+ public class ActorRoleMapping : Class-Mapping<ActorRole>
+ {
+  public ActorRoleMapping()
+  {
+   Id(x => x.Id, x => 
+   x.Generator(new Generators.GuidComb));
+   Property(x => x.Actor);
+   Property(x => x.Role);
+  }
+ }
+}
+
+
+
+
+using System.Collections.Generic;
+using NH4CookbookHelpers.Mapping;
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate;
+using NHibernate.Cfg;
+using NHibernate.Mapping.ByCode;
+namespace MappingRecipes.MappingByCode
+{
+ public class Recipe : BaseMappingRecipe
+ {
+   protected override void Configure(Configuration cfg)
+   {
+    var mapper = new ModelMapper();
+    mapper.AddMapping<ProductMapping>();
+    mapper.AddMapping<MovieMapping>();
+    mapper.AddMapping<BookMapping>();
+    mapper.AddMapping<ActorRoleMapping>();
+    var mapping =
+    mapper.CompileMappingForAllExplicitlyAddedEntities();
+    cfg.AddMapping(mapping);
+   }
+  protected override void AddInitialData(ISession session)
+   {
+    session.Save(new Movie
+    {
+     Name = "Mapping by code - the movie",
+     Description = "An interesting documentary",
+     UnitPrice = 300,
+     Actors = new List<ActorRole> { 
+     new ActorRole { 
+     Actor = "You", 
+     Role = "The mapper" 
+        }  
+       }
+    });
+   }
+ }
+}
+
+
+
+
+var mapper = new ModelMapper();
+mapper.Class<Product>(m =>
+{
+ m.Table("Product");
+ m.Id(p => p.Id, p => p.Generator(Generators.GuidComb));
+ m.Version(p => p.Version, v => v.UnsavedValue(0));
+ m.Discriminator(p => p.Column("ProductType"));
+ m.Property(p => p.Name);
+ m.Property(p => p.Description);
+ m.Property(p => p.UnitPrice);
+});
+
+
+
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate.Mapping.ByCode;
+namespace MappingRecipes.MappingByConvention
+ {
+  public class MyModelMapper : ConventionModelMapper
+  {
+   public MyModelMapper()
+   {
+    IsEntity((t, declared) => 
+    typeof(Entity).IsAssignableFrom(t) && 
+    typeof(Entity) != t);
+    IsRootEntity((t, declared) => 
+    t.BaseType == typeof(Entity));
+    IsList((member, declared) =>
+    member
+    .GetPropertyOrFieldType()
+    .IsGenericType &&
+    member
+    .GetPropertyOrFieldType()
+    .GetGenericInterfaceTypeDefinitions()
+    .Contains(typeof(IList<>)));
+    IsVersion((member, declared) =>
+    member.Name == "Version" &&
+    member.MemberType == MemberTypes.Property &&
+    member.GetPropertyOrFieldType() == typeof(int));
+    IsTablePerClassHierarchy((t, declared) => 
+    typeof(Product).IsAssignableFrom(t));
+    BeforeMapSubclass += ConfigureDiscriminatorValue;
+    BeforeMapClass += ConfigureDiscriminatorColumn;
+    BeforeMapClass += ConfigurePoidGenerator;
+    BeforeMapList += ConfigureListCascading;
+   }
+   private void ConfigureListCascading(
+   IModelInspector modelInspector, PropertyPath member, 
+   IListPropertiesMapper propertyCustomizer)
+    {
+      propertyCustomizer.Cascade(Cascade.All | 
+      Cascade.DeleteOrphans);
+    }
+   private void ConfigurePoidGenerator(
+   IModelInspector modelInspector, System.Type type, 
+   IClassAttributesMapper classCustomizer)
+    {
+     classCustomizer.Id(id => 
+     id.Generator(Generators.GuidComb));
+    }
+   private void ConfigureDiscriminatorColumn(
+   IModelInspector modelInspector, System.Type type, 
+   IClassAttributesMapper classCustomizer)
+   {
+    if (modelInspector.IsTablePerClassHierarchy(type))
+     {
+      classCustomizer.Discriminator(x => 
+      x.Column(type.Name + "Type"));
+     }
+   }
+  private void ConfigureDiscriminatorValue(
+  IModelInspector modelInspector, System.Type type, 
+  ISubclassAttributesMapper subclassCustomizer)
+  {
+   subclassCustomizer.DiscriminatorValue(type.Name);
+  }
+ }
+}
+
+
+
+
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers.Mapping;
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate;
+using NHibernate.Cfg;
+namespace MappingRecipes.MappingByConvention
+{
+ public class Recipe : BaseMappingRecipe
+ {
+  protected override void Configure(Configuration cfg)
+  {
+    var mapper = new MyModelMapper();
+    var mapping = mapper
+    .CompileMappingFor(typeof(Product).Assembly
+    .GetExportedTypes()
+    .Where(x => x.Namespace == typeof(Product).Namespace));
+    cfg.AddMapping(mapping);
+  }
+ protected override void AddInitialData(ISession session)
+  {
+   session.Save(new Movie
+   {
+    Name = "Mapping by convention - the movie",
+    Description = "An interesting documentary",
+    UnitPrice = 300,
+    Actors = new List<ActorRole> { 
+    new ActorRole { 
+    Actor = "NHibernate", 
+    Role = "The mapper"
+      } 
+     }
+   });
+  }
+ }
+}
+
+
+
+
+IsEntity((t, declared) => typeof(Entity).IsAssignableFrom(t) && 
+typeof(Entity) != t);
+
+
+
+
+
+IsRootEntity((t, declared) => t.BaseType == typeof(Entity));
+
+
+
+IsList((member, declared) =>
+member
+.GetPropertyOrFieldType()
+.IsGenericType &&
+member
+.GetPropertyOrFieldType()
+.GetGenericInterfaceTypeDefinitions()
+.Contains(typeof(IList<>)));
+
+
+
+IsVersion((member, declared) =>
+member.Name == "Version" &&
+member.MemberType == MemberTypes.Property &&
+member.GetPropertyOrFieldType() == typeof(int));
+
+
+
+
+IsTablePerClassHierarchy((t, declared) => 
+typeof(Product).IsAssignableFrom(t));
+
+
+
+
+BeforeMapSubclass += ConfigureDiscriminatorValue;
+BeforeMapClass += ConfigureDiscriminatorColumn;
+BeforeMapClass += ConfigurePoidGenerator;
+BeforeMapList += ConfigureListCascading;
+
+
+
+
+var mapper = new MyModelMapper();
+var mapping = mapper.CompileMappingFor(typeof(Product).Assembly
+.GetExportedTypes()
+.Where(x => x.Namespace == typeof(Product).Namespace));
+cfg.AddMapping(mapping);
+
+
+
+
+
+using NH4CookbookHelpers.Mapping.Model;
+using FluentNHibernate.Mapping;
+namespace MappingRecipes.MappingWithFluent
+{
+  public class ProductMap : ClassMap<Product>
+   {
+    public ProductMap()
+     {
+      Id(p => p.Id).GeneratedBy.GuidComb();
+      Version(x => x.Version);
+	  NaturalId().Property(p => p.Name).Not.ReadOnly();
+      DiscriminateSubClassesOnColumn("ProductType");
+      Map(p => p.Description);
+      Map(p => p.UnitPrice);
+     }
+   }
+}
+
+
+
+
+
+using FluentNHibernate.Mapping;
+using NH4CookbookHelpers.Mapping.Model;
+namespace MappingRecipes.MappingWithFluent
+{
+  public class BookMap : SubclassMap<Book>
+  {
+    public BookMap()
+     {
+      DiscriminatorValue("Book");
+      Map(p => p.Author);
+      Map(p => p.ISBN);
+     }
+  }
+}
+
+
+
+
+using FluentNHibernate.Mapping;
+using NH4CookbookHelpers.Mapping.Model;
+namespace MappingRecipes.MappingWithFluent
+{
+ public class MovieMap : SubclassMap<Movie>
+  {
+    public MovieMap()
+    {
+     DiscriminatorValue("Movie");
+     Map(m => m.Director);
+     HasMany(m => m.Actors)
+     .KeyColumn("MovieId")
+     .AsList(l => l.Column("ActorIndex"))
+     .Cascade.AllDeleteOrphan();
+    }
+  }
+}
+
+
+
+
+
+using FluentNHibernate.Mapping;
+using NH4CookbookHelpers.Mapping.Model;
+namespace MappingRecipes.MappingWithFluent
+{
+  public class ActorRoleMap : ClassMap<ActorRole>
+  {
+   public ActorRoleMap()
+    {
+     Id(ar => ar.Id).GeneratedBy.GuidComb();
+     Map(ar => ar.Actor).Not.Nullable();
+     Map(ar => ar.Role).Not.Nullable();
+    }
+  }
+}
+
+
+
+
+using FluentNHibernate;
+using NH4CookbookHelpers.Mapping;
+using NH4CookbookHelpers.Mapping.Model;
+using NHibernate;
+using NHibernate.Cfg;
+namespace MappingRecipes.MappingWithFluent
+{
+  public class Recipe : BaseMappingRecipe
+   {
+    protected override void Configure(Configuration cfg)
+    {
+     cfg.AddMappingsFromAssembly(GetType().Assembly);
+    }
+    protected override void AddInitialData(ISession session)
+    {
+     session.Save(new Movie()
+      {
+       Name = "Fluent mapping - the movie",
+       Description = "Go with the flow.",
+       UnitPrice = 300,
+	   Actors = { new ActorRole { Actor = "FNH", Role = "The mapper" 
+          } }
+      });
+    }
+   }
+}
+
+
+
+
+public class Order
+{
+private ISet<OrderItem> _items;
+private ISet<Project> _projects;
+public virtual Guid Id { get; protected set; }
+public Order()
+{
+_items = new HashSet<OrderItem>();
+_projects = new HashSet<Project>();
+}
+public virtual IEnumerable<OrderItem> Items
+{
+get
+{
+return _items;
+}
+}
+public virtual IEnumerable<Project> Projects
+{
+get
+{
+return _projects;
+}
+}
+public virtual bool AddItem(OrderItem newItem)
+{
+if (newItem != null && _items.Add(newItem))
+{
+newItem.SetOrder(this);
+return true;
+}
+return false;
+}
+public virtual bool RemoveItem(
+OrderItem itemToRemove)
+{
+if (itemToRemove != null &&
+_items.Remove(itemToRemove))
+{
+itemToRemove.SetOrder(null);
+return true;
+}
+return false;
+}
+public virtual bool ConnectProject(Project project)
+{
+if (project != null && _projects.Add(project))
+{
+project.ConnectOrder(this);
+return true;
+}
+return false;
+}
+public virtual bool DisconnectProject(Project project)
+{
+if (project != null && _projects.Contains(project))
+{
+_projects.Remove(project);
+project.DisconnectOrder(this);
+return true;
+}
+return false;
+}
+}
+
+
+
+public class OrderItem
+{
+protected OrderItem()
+{
+}
+public OrderItem(string name)
+{
+Name = name;
+}
+public virtual string Name { get; set; }
+public virtual Guid Id { get; protected set; }
+public virtual Order Order { get; protected set; }
+public virtual void SetOrder(Order newOrder)
+{
+var prevOrder = Order;
+if (newOrder == prevOrder)
+return;
+Order = newOrder;
+if (prevOrder != null)
+prevOrder.RemoveItem(this);
+if (newOrder != null)
+newOrder.AddItem(this);
+}
+}
+
+
+
+public class Project
+{
+private ISet<Order> _orders;
+public Project()
+{
+_orders = new HashSet<Order>();
+}
+public virtual Guid Id { get; protected set; }
+public virtual IEnumerable<Order> Orders
+{
+get
+{
+return _orders;
+}
+}
+public virtual bool ConnectOrder(Order order)
+{
+if (order != null && _orders.Add(order))
+{
+order.ConnectProject(this);
+return true;
+}
+return false;
+}
+public virtual bool DisconnectOrder(Order order)
+{
+if (order != null && _orders.Contains(order))
+{
+_orders.Remove(order);
+order.DisconnectProject(this);
+return true;
+}
+return false;
+}
+}
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+assembly="MappingRecipes"
+namespace="MappingRecipes.Bidirectional">
+<class name="OrderItem">
+<id name="Id">
+<generator class="guid.comb" />
+</id>
+<property name="Name"/>
+<many-to-one name="Order" column="OrderId" />
+</class>
+<class name="Order" table="`Order`">
+<id name="Id">
+<generator class="guid.comb" />
+</id>
+<set name="Items"
+cascade="all-delete-orphan"
+inverse="true"
+access="field.camelcase-underscore">
+<key column="OrderId" />
+<one-to-many class="OrderItem"/>
+</set>
+<set name="Projects"
+inverse="true"
+access="field.camelcase-underscore"
+table="OrderProject">
+<key column="OrderId"/>
+<many-to-many class="Project" column="ProjectId"/>
+</set>
+</class>
+<class name="Project" table="Project">
+<id name="Id">
+<generator class="guid.comb" />
+</id>
+<set name="Orders"
+access="field.camelcase-underscore"
+table="OrderProject">
+<key column="ProjectId"/>
+<many-to-many class="Order" column="OrderId"/>
+</set>
+</class>
+</hibernate-mapping>
+
+
+
+
+INSERT INTO "Order" (Id) VALUES (@p0)
+INSERT INTO OrderItem (Id) VALUES (@p0)
+UPDATE OrderItem SET OrderId = @p0 WHERE Id = @p1
+
+
+
+
+
+
+INSERT INTO "Order" (Id) VALUES (@p0)
+INSERT INTO OrderItem (OrderId, Id) VALUES (@p0, @p1)
+
+
+
+
+public enum AccountTypes
+{
+  Consumer,
+  Business,
+  Corporate,
+  NonProfit
+}
+
+
+
+
+publ  ic class Account
+{ 
+  public virtual Guid Id { get; set; }
+  public virtual AccountTypes AcctType { get; set; }
+  public virtual string Number { get; set; }
+  public virtual string Name { get; set; }
+}
+
+
+
+<class name="Account">
+ <id name="Id">
+  <generator class="guid.comb" />
+ </id>
+ <natural-id>
+  <property name="Number" not-null="true" />
+ </natural-id>
+ <property name="Name" not-null="true" />
+ <property name="AcctType" not-null="true" />
+</class>
+
+
+
+
+NHibernate.Type.EnumStringType`1[[MappingRecipes.Enumerations.
+AccountTypes, MappingRecipes]], NHibernate
+
+
+
+
+using System;
+using NH4CookbookHelpers.Mapping;
+using NHibernate;
+namespace MappingRecipes.Enumerations
+{
+public class Recipe : HbmMappingRecipe
+{
+protected override void AddInitialData(ISession session)
+{
+session.Save(new Account
+{
+Name = "Test account",
+Number = "1",
+AcctType = AccountTypes.Consumer
+});
+}
+public override void RunQueries(ISession session)
+{
+var accounts=session.QueryOver<Account>()
+.OrderBy(x=>x.Name).Asc
+.List();
+foreach (var account in accounts)
+{
+Console.WriteLine("Account name: {0},type: {1}",account.
+Name,account.AcctType);
+}
+}
+}
+}
+
+
+
+
+session.CreateSQLQuery(
+@"INSERT INTO Account (Id,Name,Number) 
+VAlUES(:id,:name,:number)")
+.SetGuid("id", Guid.NewGuid())
+.SetString("name", "Test account 2")
+.SetString("number", "2")
+.ExecuteUpdate();
+
+
+
+using System;
+namespace MappingRecipes.ImmutableEntities
+{
+  public class LogEntry
+  {
+   public virtual Guid Id { get; protected set; }
+   public virtual string Message { get; set; }
+  }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.ImmutableEntities">
+ <class name="LogEntry" mutable="false">
+  <id name="Id">
+   <generator class="guid.comb"/>
+  </id>
+   <property name="Message"/>
+ </class>
+</hibernate-mapping>
+
+
+
+
+using System;
+using NH4CookbookHelpers.Mapping;
+using NHibernate;
+namespace MappingRecipes.ImmutableEntities
+  {
+    public class Recipe : HbmMappingRecipe
+    {
+     protected override void AddInitialData(
+     ISession session)
+     {
+      for (var i = 0; i < 10; i++)
+      {
+	   session.Save(new LogEntry
+        {
+         Message = "Message " + i
+        });
+      }
+     }
+    public override void RunQueries(
+    ISessionFactory sessionFactory)
+    {
+     using (var session = sessionFactory.OpenSession())
+     {
+      using (var tx = session.BeginTransaction())
+      {
+       var logEntries = 
+       session.QueryOver<LogEntry>().List();
+       foreach (var logEntry in logEntries)
+       {
+        logEntry.Message = "Edited message";
+       }
+       tx.Commit();
+      }
+     }
+     using (var session = sessionFactory.OpenSession())
+    {
+     using (var tx = session.BeginTransaction())
+     {
+      var logEntries = session.QueryOver<LogEntry>().List();
+      foreach (var logEntry in logEntries)
+       {
+        Console.WriteLine(logEntry.Message);
+       }
+      }
+     }
+    }
+   }
+  }
+  
+  
+  
+  
+  using System.Collections.Generic;
+namespace MappingRecipes.PropertyRefs
+{
+public class Customer
+{
+public Customer()
+{
+ContactPersons=new HashSet<ContactPerson>();
+}
+public virtual int Id { get; protected set; }
+public virtual string Name { get; set; }
+public virtual ISet<ContactPerson> ContactPersons 
+{ 
+get; 
+set; 
+}
+public virtual int CompanyId { get; set; }
+}
+}
+
+
+
+
+namespace MappingRecipes.PropertyRefs
+{
+public class ContactPerson
+{
+public virtual int Id { get; protected set; }
+public virtual string Name { get; set; }
+public virtual Customer Customer { get; set; }
+}
+}
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+assembly="MappingRecipes"
+namespace="MappingRecipes.PropertyRefs">
+<class name="Customer">
+<id name="Id">
+<generator class="native"/>
+</id>
+<property name="Name"/>
+<property name="CompanyId" />
+<set name="ContactPersons" 
+cascade="save-update" 
+inverse="true">
+<key column="CompanyId" 
+property-ref="CompanyId"/>
+<one-to-many class="ContactPerson"/>
+</set>
+</class>
+<class name="ContactPerson">
+<id name="Id">
+<generator class="native"/>
+</id>
+<property name="Name"/>
+<many-to-one name="Customer" 
+class="Customer" column="CompanyId" 
+property-ref="CompanyId"foreign-key="none"/>
+</class>
+</hibernate-mapping>
+
+
+
+
+using System;
+using NH4CookbookHelpers.Mapping;
+using NHibernate;
+namespace MappingRecipes.PropertyRefs
+{
+public class Recipe : HbmMappingRecipe
+{
+protected override void AddInitialData(ISession session)
+{
+var customer = new Customer
+{
+Name = "The customer",
+CompanyId = 345
+};
+customer.ContactPersons.Add(
+new ContactPerson
+{
+Customer = customer,
+Name = "Person1"
+}
+);
+session.Save(customer);
+}
+public override void RunQueries(ISession session)
+{
+var customer = session.Get<ContactPerson>(1);
+Console.WriteLine("Customer:" + customer.Customer.Name);
+}
+}
+}
+
+
+
+INSERT INTO Customer (Name, CompanyId) 
+VALUES('The customer', 345)
+INSERT INTO ContactPerson (Name, CompanyId) 
+VALUES ('Person1', 345)
+
+
+
+SELECT [columns] 
+FROM ContactPerson 
+WHERE CompanyId=345
+
+
+
+
+namespace MappingRecipes.LazyProperties
+{
+ public class Article
+ {
+  public virtual int Id { get; protected set; }
+  public virtual string Title { get; set; }
+  public virtual string Abstract { get; set; }
+  public virtual string Author { get; set; }
+  public virtual string FullText { get; set; }
+ }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.LazyProperties">
+ <class name="Article">
+  <id name="Id">
+   <generator class="native"/>
+  </id>
+  <property name="Title"/>
+  <property name="Abstract"/>
+  <property name="Author"/>
+  <property name="FullText" lazy="true"/>
+ </class>
+</hibernate-mapping>
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.LazyProperties
+{
+  public class Recipe : HbmMappingRecipe
+  {
+   protected override void AddInitialData(ISession session)
+   {
+    session.Save(new Article
+    {
+     Title = "Lazy properties",
+     Author = "NHibernate",
+     Abstract = "Supporting lazy properties is cool",
+     FullText = "An enourmously long text"
+    });
+   }
+  public override void RunQueries(ISession session)
+   {
+    var article = session.Get<Article>(1);
+    Console.WriteLine("Title:" + article.Title);
+    Console.WriteLine("Author:" + article.Author);
+    Console.WriteLine("Abstract:" + article.Abstract);
+    Console.WriteLine("Has fulltext been loaded: {0}",
+    NHibernateUtil.IsPropertyInitialized(
+    article,"FullText"));
+    Console.WriteLine("Full text:" + article.FullText);
+   }
+  }
+}
+
+
+
+namespace MappingRecipes.MappingJoins
+{
+  public class Article
+  {
+   public virtual int Id { get; protected set; }
+   public virtual string Title { get; set; }
+   public virtual string Abstract { get; set; }
+   public virtual string Author { get; set; }
+   public virtual string FullText { get; set; }
+  }
+}
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.MappingJoins">
+ <class name="Article">
+   <id name="Id">
+     <generator class="native"/>
+   </id>
+   <property name="Title"/>
+   <property name="Abstract"/>
+   <property name="Author"/>
+   <join table="ArticleFullText" 
+    optional="true">
+    <key column="ArticleId" unique="true"/>
+    <property name="FullText"/>
+   </join>
+ </class>
+</hibernate-mapping>
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.MappingJoins
+{
+ public class Recipe : HbmMappingRecipe
+ {
+  protected override void AddInitialData(
+  ISession session)
+  {
+    session.Save(new Article
+    {
+     Title = "Lazy properties",
+     Author = "NHibernate",
+     Abstract = "Supporting lazy properties is cool",
+     FullText = "A really long article"
+    });
+   }
+  public override void RunQueries(ISession session)
+  {
+   var article = session.Get<Article>(1);
+   Console.WriteLine("Title:" + article.Title);
+   Console.WriteLine("Author:" + article.Author);
+   Console.WriteLine("Abstract:" + article.Abstract);
+   Console.WriteLine("Full text:" + article.FullText);
+  }
+ }
+}
+
+
+
+
+
+using System;
+namespace MappingRecipes.CalculatedProperties
+{
+public class Invoice
+ {
+  public virtual Guid Id { get; protected set; }
+  public virtual decimal Amount { get; set; }
+  public virtual string Customer { get; set; }
+  public virtual int InvoicesOnCustomer 
+   { get; protected set; }
+ }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.CalculatedProperties">
+  <class name="Invoice">
+     <id name="Id">
+      <generator class="guid.comb"/>
+     </id>
+    <property name="Amount"/>
+    <property name="Customer"/>
+	<property name="InvoicesOnCustomer" formula="(SELECT COUNT(*) 
+    FROM Invoice i WHERE i.Customer=Customer)"/>
+  </class>
+</hibernate-mapping>
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.CalculatedProperties
+{
+  public class Recipe : HbmMappingRecipe
+   {
+    protected override void AddInitialData(ISession 
+    session)
+    {
+     session.Save(new Invoice { Amount = 200, 
+     Customer = "A" });
+     session.Save(new Invoice { Amount = 2000, 
+     Customer = "A" });
+     session.Save(new Invoice { Amount = 200, 
+     Customer = "B" });
+    }
+  public override void RunQueries(ISession session)
+   {
+   var invoices = session.QueryOver<Invoice>().List();
+   foreach (var invoice in invoices)
+    {
+     Console.WriteLine(@"Amount: {0}, 
+     InvoicesOnCustomer: {1}",
+     invoice.Amount, invoice.InvoicesOnCustomer);
+     }
+   }
+  }
+}
+
+
+
+
+
+SELECT
+this_.Id as Id0_0_,
+this_.Amount as Amount0_0_,
+this_.Customer as Customer0_0_,
+(SELECT
+COUNT(*) 
+FROM
+Invoice i 
+WHERE
+i.Customer=this_.Customer) as formula0_0_ 
+FROM
+Invoice this_
+
+
+
+<discriminator formula="CASE WHEN CustomerType IN ('Gold', 'Silver') 
+THEN 'Preferred' ELSE 'Normal' END" type="string"/>
+
+
+
+public class Error
+{
+  public virtual Guid Id { get; set; }
+  public virtual DateTime ErrorDateTime { get; set; }
+  public virtual Exception Exception { get; set; }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+  assembly="MappingRecipes"
+  namespace="MappingRecipes.SerializableValues">
+  <class name="Error">
+    <id name="Id">
+      <generator class="guid.comb"/>
+    </id>
+    <property name="ErrorDateTime" />
+    <property name="Exception" type="Serializable"/>
+  </class>
+</hibernate-mapping>
+
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.SerializableValues
+{
+  public class Recipe : HbmMappingRecipe
+  {
+   protected override void AddInitialData(
+   ISessionFactory sessionFactory)
+   {
+    try
+    {
+     throw new ApplicationException(
+     "Something happened",
+     new NullReferenceException("Something was null")
+      );
+    }
+   catch (Exception ex)
+    {
+      LogError(ex, sessionFactory);
+    }
+   }
+  private void LogError(Exception exception, 
+  ISessionFactory sessionFactory)
+  {
+    using (var session= sessionFactory
+    .OpenStatelessSession())
+   {
+    using (var tx = session.BeginTransaction())
+    {
+     session.Insert(new Error
+     {
+       ErrorDateTime = DateTime.Now,
+       Exception = exception
+     });
+       tx.Commit();
+    }
+   }
+  }
+  public override void RunQueries(ISession session)
+  {
+   var error = session.QueryOver<Error>()
+   .SingleOrDefault();
+   if (error.Exception != null)
+   {
+    ShowException(error.Exception);
+    Console.WriteLine("Stack trace:" + 
+     error.Exception.StackTrace);
+   }
+  }
+  private void ShowException(Exception exception)
+   {
+    Console.WriteLine("Type: {0}, Message: {1}",
+    exception.Message,exception.GetType());
+    if (exception.InnerException != null)
+     {
+      ShowException(exception.InnerException);
+     }
+   }
+ }
+}
+
+
+
+
+
+public object NullSafeGet(IDataReader rs, string[] names, object 
+owner)
+{
+ if (names.Length != 1)
+ throw new InvalidOperationException("Invalid column count");
+ var val = rs[names[0]] as string;
+ if (val != null && !string.IsNullOrWhiteSpace(val))
+  {
+   return JsonConvert.DeserializeObject<T>(val);
+  }
+   return null;
+}
+public void NullSafeSet(IDbCommand cmd, object value, int index)
+ {
+   var parameter = (DbParameter)cmd.Parameters[index];
+   if (value == null)
+   {
+    parameter.Value = DBNull.Value;
+   }
+  else
+   {
+    parameter.Value = JsonConvert.SerializeObject(value);
+   }
+}
+
+
+
+
+
+using System;
+using System.Collections;
+namespace MappingRecipes.DynamicComponents
+{
+ public class Contact
+ {
+  public Contact()
+  {
+   Attributes=new Hashtable();
+  }
+   public virtual Guid Id { get; protected set; }
+   public virtual IDictionary Attributes { get; set; }
+  }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.DynamicComponents">
+ <class name="Contact">
+   <id name="Id">
+     <generator class="guid.comb"/>
+   </id>
+   <dynamic-component name="Attributes">
+   <property name="FirstName" type="string"/>
+   <property name="LastName" type="string"/>
+   <property name="BirthDate" type="DateTime"/>
+   </dynamic-component>
+ </class>
+</hibernate-mapping>
+
+
+
+
+
+using System;
+using System.Linq;
+using NH4CookbookHelpers;
+using NHibernate;
+using NHibernate.Linq;
+namespace MappingRecipes.DynamicComponents
+{
+ public class Recipe : HbmMappingRecipe
+ {
+  protected override void AddInitialData(ISession session)
+  {
+    session.Save(new Contact
+     {
+      Attributes =
+      {
+       ["FirstName"] = "Dave",
+	   ["LastName"] = "Gahan",
+       ["BirthDate"] = new DateTime(1962, 5, 9)
+      }
+     });
+    session.Save(new Contact
+    {
+     Attributes =
+     {
+     ["FirstName"] = "Martin",
+     ["LastName"] = "Gore",
+     ["BirthDate"] = new DateTime(1961, 7, 23)
+     }
+    });
+   }
+  public override void RunQueries(ISession session)
+   {
+    var contactsBornInMay = session.Query<Contact>()
+    .Where(x => 
+    ((DateTime)x.Attributes["BirthDate"]).Month == 5)
+    .ToList();
+    foreach (var contact in contactsBornInMay)
+    {
+     Console.WriteLine("{0} {1} {2:d}",
+     contact.Attributes["FirstName"],
+     contact.Attributes["LastName"],
+     contact.Attributes["BirthDate"]);
+    }
+   }
+  }
+}
+
+
+
+
+session.Save(new Contact
+{
+Attributes =
+ {
+  ["FirstName"] = "Dave",
+  ["LastName"] = "Gahan",
+  ["BirthDate"] = new DateTime(1962, 5, 9)
+ }
+});
+
+
+
+
+var contactsBornInMay = session.Query<Contact>()
+.Where(x => ((DateTime)x.Attributes["BirthDate"]).Month == 5)
+.ToList();
+
+
+
+var contactsBornInMay = session.CreateQuery(@"
+from Contact 
+where month(Attributes.BirthDate)=:monthNumber")
+.SetInt32("monthNumber",5)
+.List<Contact>();
+
+
+
+<join table="ContactAttributesForTenant23">
+ <key column="ContactId"/>
+ <dynamic-component name="Attributes">
+  <property name="FirstName" type="string"/>
+  <property name="LastName" type="string"/>
+  <property name="BirthDate" type="DateTime"/>
+ </dynamic-component>
+</join>
+
+
+
+
+
+namespace MappingRecipes.MappingSubselects
+{
+ public class PageStatisticsEntry
+  {
+   public virtual string Url { get; protected set; }
+   public virtual int ViewCount { get; protected set; }
+  }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+ assembly="MappingRecipes"
+ namespace="MappingRecipes.MappingSubselects">
+ <class name="PageHit">
+  <id name="Id">
+   <generator class="native"/>
+  </id>
+  <property name="Url" not-null="true"/>
+ </class>
+ <class name="PageStatisticsEntry" mutable="false">
+  <subselect>
+    SELECT Url, COUNT(*) as ViewCount 
+    FROM PageHit GROUP BY Url
+  </subselect>
+  <synchronize table="PageHit"/>
+ <id name="Url"/>
+  <property name="ViewCount"/>
+ </class>
+</hibernate-mapping>
+
+
+
+
+
+
+using System;
+using NH4CookbookHelpers;
+using NHibernate;
+namespace MappingRecipes.MappingSubselects
+{
+ public class Recipe : HbmMappingRecipe
+  {
+   protected override void AddInitialData(
+   ISessionFactory sessionFactory)
+   {
+    var random = new Random();
+    using (var session = sessionFactory
+    .OpenStatelessSession())
+     {
+      for (var i = 0; i < 100; i++)
+      {
+       session.Insert(new PageHit
+        {
+		  Url = random.Next(10).ToString(),
+          PageViewDateTime = DateTime.Now
+        });
+      }
+     }
+   }
+   public override void RunQueries(ISession session)
+   {
+    var stats = session.QueryOver<PageStatisticsEntry>()
+    .Where(x => x.ViewCount > 2)
+    .OrderBy(x => x.ViewCount).Desc.List();
+    foreach (var entry in stats)
+    {
+     Console.WriteLine("Url: {0}, View count: {1}", 
+     entry.Url, entry.ViewCount);
+    }
+   }
+ }
+}
+
+
+
+
+<class name="PageStatisticsEntry" mutable="false">
+ <subselect>
+  SELECT Url, COUNT(*) as ViewCount 
+  FROM PageHit GROUP BY Url
+ </subselect>
+ <synchronize table="PageHit"/>
+ <id name="Url"/>
+  <property name="ViewCount"/>
+</class>
+ 
+

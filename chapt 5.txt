@@ -1,0 +1,1325 @@
+Chapter 5:Improving Performance
+
+
+using System;
+using System.Configuration;
+using System.IO;
+using System.Reflection;
+using System.Runtime.Serialization.Formatters.Binary;
+using Configuration = NHibernate.Cfg.Configuration;
+
+namespace ConfigByAppConfig
+{
+  public class ConfigurationBuilder
+  {
+    private const string SERIALIZED_CFG = "configuration.bin";
+}
+}
+
+
+
+
+
+public Configuration Build()
+{
+Configuration cfg = LoadConfigurationFromFile();
+if (cfg == null)
+{
+cfg = new Configuration().Configure();
+SaveConfigurationToFile(cfg);
+}
+return cfg;
+}
+
+
+
+
+
+private Configuration LoadConfigurationFromFile()
+{
+if (!IsConfigurationFileValid())
+return null;
+try
+{
+using (var file = File.Open(SERIALIZED_CFG, FileMode.Open))
+{
+var bf = new BinaryFormatter();
+return bf.Deserialize(file) as Configuration;
+}
+}
+catch (Exception)
+{
+// Something went wrong
+// Just build a new one
+return null;
+}
+}
+
+
+
+
+
+
+private bool IsConfigurationFileValid()
+{
+// If we don't have a cached config, 
+// force a new one to be built
+if (!File.Exists(SERIALIZED_CFG))
+return false;
+var configInfo = new FileInfo(SERIALIZED_CFG);
+var asm = Assembly.GetExecutingAssembly();
+if (asm.Location == null)
+return false;
+// If the assembly is newer, 
+// the serialized config is stale
+var asmInfo = new FileInfo(asm.Location);
+if (asmInfo.LastWriteTime > configInfo.LastWriteTime)
+return false;
+// If the app.config is newer, 
+// the serialized config is stale
+var appDomain = AppDomain.CurrentDomain;
+var appConfigPath = appDomain.SetupInformation.ConfigurationFile;
+var appConfigInfo = new FileInfo(appConfigPath);
+if (appConfigInfo.LastWriteTime > configInfo.LastWriteTime)
+return false;
+// It's still fresh
+return true;
+}
+
+
+
+
+private void SaveConfigurationToFile(Configuration cfg)
+{
+using (var file = File.Open(SERIALIZED_CFG, FileMode.Create))
+{
+var bf = new BinaryFormatter();
+bf.Serialize(file, cfg);
+}
+}
+
+
+
+
+
+
+var nhConfig = new ConfigurationBuilder().Build();
+
+
+
+
+
+public struct PageOf<T>
+{
+public int PageCount;
+public int PageNumber;
+public IEnumerable<T> PageOfResults;
+}
+
+
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+
+namespace QueryRecipes.MultiCriteria
+{
+  public class Queries
+  {
+    private readonly ISession _session;
+
+    public Queries(ISession session)
+    {
+      _session = session;
+    }
+
+    public PageOf<Product> GetPageOfProducts(
+int pageNumber,
+int pageSize)
+    {
+      var skip = (pageNumber - 1) * pageSize;
+
+      var countQuery = GetCountQuery();
+      var resultQuery = GetPageQuery(skip, pageSize);
+
+      var multiCrit = _session.CreateMultiCriteria()
+      .Add<int>("count", countQuery)
+      .Add<Product>("page", resultQuery);
+
+      var productCount = ((IList<int>)multiCrit
+      .GetResult("count")).Single();
+
+      var products = (IList<Product>)multiCrit
+      .GetResult("page");
+
+      var pageCount = (int)Math.Ceiling(
+      productCount / (double)pageSize);
+
+      return new PageOf<Product>()
+      {
+        PageCount = pageCount,
+        PageOfResults = products,
+        PageNumber = pageNumber
+      };
+    }
+
+    private ICriteria GetCountQuery()
+    {
+      return _session.QueryOver<Product>()
+      .SelectList(list => list
+      .SelectCount(m => m.Id))
+      .UnderlyingCriteria;
+    }
+
+    private ICriteria GetPageQuery(int skip, int take)
+    {
+      return _session.QueryOver<Product>()
+      .OrderBy(m => m.UnitPrice).Asc
+      .Skip(skip)
+      .Take(take)
+      .UnderlyingCriteria;
+    }
+  }
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+
+namespace QueryRecipes.MultiCriteria
+{
+  public class Recipe : QueryRecipe
+  {
+    protected override void Run(ISession session)
+    {
+      var queries = new Queries(session);
+      var result = queries.GetPageOfProducts(1, 2);
+      var heading = string.Format("Page {0} of {1}",
+      result.PageNumber,
+      result.PageCount);
+      Show(heading, result.PageOfResults);
+    }
+  }
+}
+
+
+
+
+
+
+var multiCrit = session.CreateMultiCriteria()
+  .Add<int>("count", countQuery)
+  .Add<Movie>("page", resultQuery);
+
+
+
+
+
+
+
+
+public struct PageOf<T>
+{
+public int PageCount;
+public int PageNumber;
+public IEnumerable<T> PageOfResults;
+}
+
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+
+namespace QueryRecipes.MultiQueries
+{
+  public class Queries
+  {
+    private readonly ISession _session;
+
+    public Queries(ISession session)
+    {
+      _session = session;
+    }
+
+    public PageOf<Product> GetPageOfProducts(
+int pageNumber,
+int pageSize)
+    {
+      var skip = (pageNumber - 1) * pageSize;
+
+      var countQuery = GetCountQuery();
+      var resultQuery = GetPageQuery(skip, pageSize);
+
+      var multiQuery = _session.CreateMultiQuery()
+      .Add<long>("count", countQuery)
+      .Add<Product>("page", resultQuery);
+
+      var productCount = ((IList<long>)multiQuery
+        .GetResult("count")).Single();
+
+      var products = (IList<Product>)multiQuery
+        .GetResult("page");
+
+      var pageCount = (int)Math.Ceiling(
+      productCount / (double)pageSize);
+
+      return new PageOf<Product>()
+      {
+        PageCount = pageCount,
+        PageOfResults = products,
+        PageNumber = pageNumber
+      };
+    }
+
+    private IQuery GetCountQuery()
+    {
+      var hql = @"select count(p.Id) from Product p";
+      return _session.CreateQuery(hql);
+    }
+
+    private IQuery GetPageQuery(int skip, int take)
+    {
+      var hql = @"from Product p order by p.UnitPrice asc";
+      return _session.CreateQuery(hql)
+      .SetFirstResult(skip)
+      .SetMaxResults(take);
+    }
+
+  }
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+
+namespace QueryRecipes.MultiQueries
+{
+  public class Recipe : QueryRecipe
+  {
+    protected override void Run(ISession session)
+    {
+      var queries = new Queries(session);
+      var result = queries.GetPageOfProducts(1, 2);
+      var heading = string.Format("Page {0} of {1}",
+      result.PageNumber,
+      result.PageCount);
+      Show(heading, result.PageOfResults);
+    }
+  }
+}
+
+
+
+
+
+
+using System.Collections.Generic;
+
+namespace QueryRecipes.Futures
+{
+    public struct PageOf<T>
+    {
+        public int PageCount;
+        public int PageNumber;
+        public IEnumerable<T> PageOfResults;
+    }
+}
+
+
+
+
+
+using System;
+using System.Linq;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Linq;
+
+namespace QueryRecipes.Futures
+{
+  public class Queries
+  {
+    private readonly ISession _session;
+
+    public Queries(ISession session)
+    {
+      _session = session;
+    }
+
+    public PageOf<Product> GetPageOfProducts(
+int pageNumber,
+int pageSize)
+    {
+      var skip = (pageNumber - 1) * pageSize;
+
+var productCount = _session.Query<Product>()
+.ToFutureValue(x=>x.Count());
+      
+      var products = GetPageQuery(skip, pageSize)
+.Future<Product>();
+
+
+      var pageCount = (int)Math.Ceiling(
+      productCount.Value / (double)pageSize);
+
+      return new PageOf<Product>()
+      {
+        PageCount = pageCount,
+        PageOfResults = products,
+        PageNumber = pageNumber
+      };
+    }
+    
+    private IQuery GetPageQuery(int skip, int take)
+    {
+      var hql = @"from Product p order by p.UnitPrice asc";
+      return _session.CreateQuery(hql)
+      .SetFirstResult(skip)
+      .SetMaxResults(take);
+    }
+  }
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NHibernate;
+
+namespace QueryRecipes.Futures
+{
+  public class Recipe : QueryRecipe
+  {
+    protected override void Run(ISession session)
+    {
+      var queries = new Queries(session);
+      var result = queries.GetPageOfProducts(1, 2);
+      var heading = string.Format("Page {0} of {1}",
+      result.PageNumber,
+      result.PageCount);
+      Show(heading, result.PageOfResults);
+    }
+  }
+}
+
+
+
+
+
+
+using System.Linq;
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Linq;
+
+namespace QueryRecipes.AdvancedEagerLoading
+{
+  public class Recipe : QueryRecipe
+  {
+  }
+}
+
+
+
+
+
+
+protected override void AddData(ISessionFactory sessionFactory)
+{
+  using (var session = sessionFactory.OpenSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+      for (var i = 1; i <= 20; i++)
+      {
+        var movie = new Movie
+        {
+          Name = "Movie" + i,
+          UnitPrice = i
+        };
+        movie.AddActor("Actor" + i, "Role" + i);
+        movie.AddActor("Second Actor" + 1, "Second Role" + i);
+        session.Save(movie);
+      }
+      tx.Commit();
+    }
+  }
+}
+
+
+
+
+
+protected override void Run(ISession session)
+{
+  var baseQuery = session.Query<Movie>()
+    .Where(x => x.Name.StartsWith("Movie"))
+    .OrderBy(x => x.Name)
+    .Skip(5)
+    .Take(5);
+
+  var movies = session.Query<Movie>()
+    .Where(x => baseQuery.Contains(x))
+    .OrderBy(x => x.Name)
+    .FetchMany(x => x.Actors)
+    .ToList();
+
+  Show("A page of movies", movies);
+
+  var allProducts = session.Query<Product>()
+    .OrderBy(x => x.UnitPrice)
+    .ToFuture();
+
+  session.Query<Movie>()
+    .FetchMany(x => x.Actors)
+    .ToFuture();
+
+  session.Query<Book>()
+    .Fetch(x => x.Publisher)
+    .ToFuture();
+
+  Show("All products",allProducts);
+}
+
+
+
+
+
+var baseQuery = session.Query<Movie>()
+        .Where(x => x.Name.StartsWith("Movie"))
+        .OrderBy(x => x.Name)
+        .Skip(5)
+        .Take(5);
+
+
+
+
+
+
+
+var movies = session.Query<Movie>()
+    .Where(x => baseQuery.Contains(x))
+    .OrderBy(x => x.Name)
+    .FetchMany(x => x.Actors)
+    .ToList();
+The result is a SQL query that looks similar to the following example SQL Server:
+select   movie0_.id                  as id0_0_, 
+    actors1_.id                 as id2_1_, 
+    movie0_.NAME                as name0_0_, 
+    movie0_.description         as descript4_0_0_, 
+    movie0_.unitprice           as unitprice0_0_, 
+    movie0_.director            as director0_0_, 
+    actors1_.actor              as actor2_1_, 
+    actors1_.role               as role2_1_, 
+    actors1_.movieid            as movieid2_1_, 
+    actors1_.movieid            as movieid0__, 
+    actors1_.id                 as id0__ 
+from    product movie0_ 
+left outer join actorrole actors1_ on movie0_.id=actors1_.movieid 
+where    movie0_.producttype='Movie' 
+and     movie0_.id IN 
+    ( 
+      select   movie2_.id 
+     from     product movie2_ 
+     where    movie2_.producttype='Movie' 
+     and      movie2_.name like (@p0+'%')
+     order by movie2_.name asc
+     offset @p1 rows 
+     fetch first @p2 rows only 
+  ) 
+order by        movie0_.name asc
+
+
+
+
+
+
+session.Query<Movie>()
+  .FetchMany(x=>x.Actors)
+   .ToFuture();
+
+
+
+
+
+session.Query<Book>()
+    .Fetch(x => x.Publisher)
+    .ToFuture();
+
+
+
+
+select
+  product0_.Id as Id0_,
+  product0_.Name as Name0_,
+  product0_.Description as Descript4_0_,
+  product0_.UnitPrice as UnitPrice0_,
+  product0_.ISBN as ISBN0_,
+  product0_.Author as Author0_,
+  product0_.PublisherId as Publishe8_0_,
+  product0_.Director as Director0_,
+  product0_.ProductType as ProductT2_0_ 
+from
+  Product product0_ 
+order by
+  product0_.UnitPrice asc
+
+select
+  movie0_.Id as Id0_0_,
+  actors1_.Id as Id2_1_,
+  movie0_.Name as Name0_0_,
+  movie0_.Description as Descript4_0_0_,
+  movie0_.UnitPrice as UnitPrice0_0_,
+  movie0_.Director as Director0_0_,
+  actors1_.Actor as Actor2_1_,
+  actors1_.Role as Role2_1_,
+  actors1_.MovieId as MovieId2_1_,
+  actors1_.MovieId as MovieId0__,
+  actors1_.Id as Id0__ 
+from
+  Product movie0_ 
+left outer join
+  ActorRole actors1_ 
+  on movie0_.Id=actors1_.MovieId 
+where
+  movie0_.ProductType='Movie'
+
+select
+  book0_.Id as Id0_0_,
+  publisher1_.Id as Id1_1_,
+  book0_.Name as Name0_0_,
+  book0_.Description as Descript4_0_0_,
+  book0_.UnitPrice as UnitPrice0_0_,
+  book0_.ISBN as ISBN0_0_,
+  book0_.Author as Author0_0_,
+  book0_.PublisherId as Publishe8_0_0_,
+  publisher1_.Name as Name1_1_ 
+from
+  Product book0_ 
+left outer join
+  Publisher publisher1_ 
+  on book0_.PublisherId=publisher1_.Id 
+where
+  book0_.ProductType='Book'
+
+
+
+
+
+session.Query<Movie>()
+  .FetchMany(x=>x.Actors)
+  .ToFuture();
+
+session.Query<Movie>()
+  .FetchMany(x=>x.MakeUpArtists)
+  .ToFuture();
+  
+session.Query<Movie>()
+  .FetchMany(x=>x.StageBuilders)
+  .ToFuture();
+
+
+
+
+
+var baseCrit = DetachedCriteria.For<Movie>()
+    .Add(Restrictions.Like("Name", "Movie", MatchMode.Start))
+    .AddOrder(new Order("Name", true))
+    .SetProjection(Property.ForName("Id"))
+    .SetFirstResult(5)
+    .SetMaxResults(5);
+
+var movies = session.CreateCriteria<Movie>()
+    .Add(Subqueries.PropertyIn("Id", baseCrit))
+    .AddOrder(new Order("Name", true))
+    .SetFetchMode("Actors", FetchMode.Join)
+    .List<Movie>();
+
+
+
+
+var baseQuery = QueryOver.Of<Movie>()
+    .Where(
+        Restrictions.On<Movie>(x => x.Name)
+        .IsLike("Movie", MatchMode.Start)
+    )
+    .OrderBy(x => x.Name).Asc
+    .Select(x=>x.Id)
+    .Skip(5)
+    .Take(5);
+
+var movies = session.QueryOver<Movie>()
+    .WithSubquery
+    .WhereProperty(m => m.Id)
+    .In(baseQuery)
+    .Fetch(x => x.Actors).Eager
+    .List();
+
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Linq;
+using System;
+using System.Linq;
+
+namespace QueryRecipes.Stateless
+{
+  public class Recipe : QueryRecipe
+  {
+    
+  }
+}
+
+
+
+
+
+
+protected override void AddData(ISessionFactory sessionFactory)
+{
+  using (var session = sessionFactory.OpenStatelessSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+      for (int i = 0; i < 1000; i++)
+        session.Insert(new Movie()
+        {
+          Name = "Movie " + i,
+          Description = "A great movie!",
+          UnitPrice = 14.95M,
+          Director = "Johnny Smith"
+        });
+      tx.Commit();
+    }
+  }
+}
+
+
+
+
+
+
+protected override void Run(ISessionFactory sessionFactory)
+{
+  using (var session = sessionFactory.OpenStatelessSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+      var movies = session.Query<Movie>().ToList();
+      foreach (var movie in movies)
+      {
+        UpdateMoviePrice(movie);
+        session.Update(movie);
+      }
+      tx.Commit();
+    }
+  }
+}
+
+
+
+
+
+static Random rnd = new Random();
+
+static void UpdateMoviePrice(Movie movie)
+{
+  // Random price between $9.95 and $24.95
+  movie.UnitPrice = (decimal) rnd.Next(10, 26) - 0.05M;
+}
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+
+namespace QueryRecipes.ReadOnly
+{
+  public class Recipe : QueryRecipe
+  {
+    private bool _readOnly=true;
+
+    protected override void Run(ISessionFactory sessionFactory)
+    {
+      RunWithReadOnlySession(sessionFactory);
+      RunWithQuery(sessionFactory);
+      RunWithSetReadOnly(sessionFactory);
+    }
+
+    private void RunWithReadOnlySession(ISessionFactory sessionFactory)
+    {
+      using (var session = sessionFactory.OpenSession())
+      {
+        session.DefaultReadOnly = _readOnly;
+        using (var tx = session.BeginTransaction())
+        {
+          var movie = session.Get<Movie>(1);
+          movie.Director = "Updated in session";
+          tx.Commit();
+        }
+      }
+    }
+    
+    private void RunWithQuery(ISessionFactory sessionFactory)
+    {
+      using (var session = sessionFactory.OpenSession())
+      {
+        using (var tx = session.BeginTransaction())
+        {
+          var query = session.QueryOver<Movie>()
+            .Where(x => x.Id == 1);
+           
+          if (_readOnly)
+          {
+            query.ReadOnly();
+          }
+          var movie=query.SingleOrDefault();
+
+          movie.Director = "Updated in query";
+          tx.Commit();
+        }
+      }
+    }
+
+    private void RunWithSetReadOnly(ISessionFactory sessionFactory)
+    {
+      using (var session = sessionFactory.OpenSession())
+      {
+        using (var tx = session.BeginTransaction())
+        {
+          var movie = session.Get<Movie>(1);
+          session.SetReadOnly(movie, _readOnly);
+          movie.Director = "Updated with SetReadOnly";
+          tx.Commit();
+        }
+      }
+    }
+  }
+}
+
+
+
+
+
+
+
+<section name="syscache"
+type="NHibernate.Caches.SysCache.SysCacheSectionHandler, 
+NHibernate.Caches.SysCache" />
+
+
+
+
+
+
+<syscache>
+<cache region="hourly" expiration="60" priority="3" />
+</syscache>
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<hibernate-configuration xmlns="urn:nhibernate-configuration-2.2">
+  <session-factory>
+    <property name="cache.provider_class">
+      NHibernate.Caches.SysCache.SysCacheProvider,
+      NHibernate.Caches.SysCache
+    </property>
+    <property name="cache.use_second_level_cache">
+      true
+    </property>
+    <property name="cache.use_query_cache">
+      true
+    </property>
+    <class-cache class="NH4CookbookHelpers.Queries.Model.Product,NH4CookbookHelpers"
+  region="hourly" usage="read-write"/>
+    <class-cache class="NH4CookbookHelpers.Queries.Model.ActorRole,NH4CookbookHelpers"
+    region="hourly" usage="read-write"/>
+    <collection-cache collection="NH4CookbookHelpers.Queries.Model.Movie.Actors"
+    region="hourly" usage="read-write"/>
+  </session-factory>
+</hibernate-configuration>
+
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Cfg;
+
+namespace QueryRecipes.Caching
+{
+  public class Recipe : QueryRecipe
+  {
+    protected override void Configure(Configuration nhConfig)
+    {
+      nhConfig.Configure("Caching/hibernate.cfg.xml");
+    }
+  }
+}
+
+
+
+
+
+
+
+
+protected override void Run(ISessionFactory sessionFactory)
+{
+  ShowMoviesBy(sessionFactory, "Steven Spielberg");
+  ShowMoviesBy(sessionFactory, "Steven Spielberg");
+  UpdateMoviesBy(sessionFactory, "Steven Spielberg");
+  ShowMoviesBy(sessionFactory, "Steven Spielberg");
+}
+
+private void ShowMoviesBy(ISessionFactory sessionFactory, 
+   string director)
+{
+  using (var session = sessionFactory.OpenSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+      var movies = session.QueryOver<Movie>()
+        .Where(x => x.Director == director)
+        .Cacheable()
+        .List();
+      Show("Movies found:", movies);
+      tx.Commit();
+    }
+  }
+}
+
+private void UpdateMoviesBy(ISessionFactory sessionFactory, 
+   string director)
+{
+  using (var session = sessionFactory.OpenSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+      session.CreateQuery(@"update Movie 
+                set Description='Good' 
+                where Director=:director")
+        .SetString("director", director)
+        .ExecuteUpdate();
+      tx.Commit();
+    }
+  }
+}
+
+
+
+
+
+
+<class name="Product">
+    <cache region="hourly" usage="read-write"/>
+    ...
+</class>
+
+
+
+
+
+using NH4CookbookHelpers.Queries;
+using NH4CookbookHelpers.Queries.Model;
+using NHibernate;
+using NHibernate.Caches.SysCache;
+using NHibernate.Cfg;
+
+namespace QueryRecipes.CachingWithCode
+{
+  public class Recipe : QueryRecipe
+  {
+  }
+}
+
+
+
+
+
+protected override void Configure(Configuration nhConfig)
+{
+  nhConfig
+    .Cache(x =>
+    {
+      x.Provider<SysCacheProvider>();
+      x.UseQueryCache = true;
+    })
+    .EntityCache<Product>(c =>
+    {
+      c.Strategy = EntityCacheUsage.ReadWrite;
+      c.RegionName = "hourly";
+    })
+    .EntityCache<ActorRole>(c =>
+    {
+      c.Strategy = EntityCacheUsage.ReadWrite;
+      c.RegionName = "hourly";
+    })
+    .EntityCache<Movie>(c => c.Collection(
+    movie => movie.Actors,
+    coll =>
+    {
+      coll.Strategy = EntityCacheUsage.ReadWrite;
+      coll.RegionName = "hourly";
+    }));
+}
+
+
+
+
+
+protected override void Run(ISessionFactory sessionFactory)
+{
+  ShowMoviesBy(sessionFactory, "Steven Spielberg");
+  ShowMoviesBy(sessionFactory, "Steven Spielberg");
+}
+
+private void ShowMoviesBy(ISessionFactory sessionFactory, string director)
+{
+  using (var session = sessionFactory.OpenSession())
+  {
+    using (var tx = session.BeginTransaction())
+    {
+      var movies = session.QueryOver<Movie>()
+        .Where(x => x.Director == director)
+        .Cacheable()
+        .List();
+      Show("Movies found:", movies);
+      tx.Commit();
+    }
+  }
+}
+
+
+
+
+
+.Cache(x =>
+        {
+            x.Provider<SysCacheProvider>();
+            x.UseQueryCache = true;
+        })
+
+
+
+
+  .EntityCache<Product>(c =>
+  {
+    c.Strategy = EntityCacheUsage.ReadWrite;
+    c.RegionName = "hourly";
+  })
+  .EntityCache<ActorRole>(c =>
+  {
+    c.Strategy = EntityCacheUsage.ReadWrite;
+    c.RegionName = "hourly";
+  })
+
+
+
+
+
+nhConfig
+  .EntityCache<Movie>(c => c.Collection(
+    movie => movie.Actors,
+    coll =>
+    {
+      coll.Strategy = EntityCacheUsage.ReadWrite;
+      coll.RegionName = "hourly";
+    }));
+
+
+
+
+
+
+public class ProductMapping : ClassMapping<Product>
+{
+  public ProductMapping()
+  {
+    …
+    Cache(c =>
+    {
+      c.Usage(CacheUsage.ReadWrite);
+      c.Region("hourly");
+    });
+  }
+}
+
+public class MovieMapping : SubclassMapping<Movie>
+{
+  public MovieMapping()
+  {
+    ...
+    Set(x => x.Actors, x =>
+      {
+        x.Cache(c =>
+        {
+          c.Usage(CacheUsage.ReadWrite);
+          c.Region("hourly");
+        });
+      ...
+      }
+    , x => x.OneToMany());
+  }
+}
+
+
+
+
+
+
+public class ProductMap : ClassMap<Product>
+{
+  public ProductMap()
+  {
+    ...
+    Cache.ReadWrite().Region("hourly");
+  }
+}
+public class MovieMap : SubclassMap<Movie>
+{
+  public MovieMap()
+  {
+    ...
+    HasMany(x => x.Actors)
+      .AsSet()
+      .Cache.ReadWrite().Region("hourly");
+  }
+}
+
+
+
+
+
+Install-Package NHibernate.Shards –Project QueryRecipes
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2"
+  assembly="QueryRecipes"
+  namespace="QueryRecipes.Sharding">
+  <class name="ShardedProduct">
+    <id name="Id">
+      <generator class="NHibernate.Shards.Id.ShardedUUIDGenerator,NHibernate.Shards" />
+    </id>
+    <property name="Name" />
+  </class>
+</hibernate-mapping>
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+  <connectionStrings>
+  <add name="Shard1" connectionString="Server=.\SQLExpress; Database=Shard1; Trusted_Connection=SSPI"/>
+  <add name="Shard2" connectionString="Server=.\SQLExpress; Database=Shard2; Trusted_Connection=SSPI"/>
+  <add name="Shard3" connectionString="Server=.\SQLExpress; Database=Shard3; Trusted_Connection=SSPI"/>
+  </connectionStrings>
+</configuration>
+
+
+
+
+namespace QueryRecipes.Sharding
+{
+  public class ShardedProduct
+  {
+    public virtual string Id { get; protected set; }
+    public virtual string Name { get; set; }
+  }
+}
+
+
+
+
+using System.Collections.Generic;
+using NHibernate.Shards;
+using NHibernate.Shards.LoadBalance;
+using NHibernate.Shards.Strategy;
+using NHibernate.Shards.Strategy.Access;
+using NHibernate.Shards.Strategy.Resolution;
+using NHibernate.Shards.Strategy.Selection;
+
+namespace QueryRecipes.Sharding
+{
+  public class ShardStrategyFactory : IShardStrategyFactory
+  {
+    public IShardStrategy NewShardStrategy(
+      IEnumerable<ShardId> shardIds)
+    {
+      var loadBalancer = 
+  new RoundRobinShardLoadBalancer(shardIds);
+      return new ShardStrategyImpl(
+        new RoundRobinShardSelectionStrategy(loadBalancer),
+        new AllShardsShardResolutionStrategy(shardIds),
+        new SequentialShardAccessStrategy());
+    }
+  }
+}
+
+
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using NH4CookbookHelpers;
+using NHibernate.Cfg;
+using NHibernate.Dialect;
+using NHibernate.Driver;
+using NHibernate.Shards;
+using NHibernate.Shards.Cfg;
+using NHibernate.Shards.Session;
+using NHibernate.Shards.Tool;
+
+namespace QueryRecipes.Sharding
+{
+    public class Recipe : BaseRecipe
+    {
+        private IShardedSessionFactory _sessionFactory;
+    }
+}
+
+
+
+
+
+public override void Initialize()
+{
+    var connStrNames = new List<string> {
+"Shard1", "Shard2", "Shard3" 
+    };
+
+    var shardConfigs = connStrNames.Select((x, index) => 
+      new ShardConfiguration
+      {
+        ShardId = (short)index,
+        ConnectionStringName = x
+      }
+    );
+
+    var protoConfig = new Configuration()
+        .DataBaseIntegration(
+            x =>
+            {
+                x.Dialect<MsSql2012Dialect>();
+                x.Driver<Sql2008ClientDriver>();
+            })
+        .AddResource("QueryRecipes.Sharding.ShardedProduct.hbm.xml",   
+         GetType().Assembly);
+
+    var shardedConfig = new ShardedConfiguration(
+     protoConfig, 
+     shardConfigs, 
+     new ShardStrategyFactory()
+    );
+
+    CreateSchema(shardedConfig);
+
+    try
+    {
+        _sessionFactory = shardedConfig.BuildShardedSessionFactory();
+    }
+    catch
+    {
+        DropSchema(shardedConfig);
+        throw;
+    }
+}
+
+
+
+
+private void CreateSchema(ShardedConfiguration shardedConfiguration)
+{
+    new ShardedSchemaExport(shardedConfiguration)
+          .Create(false, true);
+}
+
+private void DropSchema(ShardedConfiguration shardedConfiguration)
+{
+    new ShardedSchemaExport(shardedConfiguration)
+          .Drop(false, true);
+}
+
+
+
+
+
+public override void Run()
+{
+    using (var session = _sessionFactory.OpenSession())
+    {
+        using (var tx = session.BeginTransaction())
+        {
+            for (var i = 0; i < 100; i++)
+            {
+                var product=new ShardedProduct()
+                {
+                    Name = "Product" + i,
+                };
+                session.Save(product);
+            }
+            tx.Commit();
+        }
+    }
+            
+    using (var session = _sessionFactory.OpenSession())
+    {
+        using (var tx = session.BeginTransaction())
+        {
+            var query = @"from ShardedProduct p 
+                            where upper(p.Name)
+                            like '%1%'";
+            var products = session.CreateQuery(query)
+                .List<ShardedProduct>();
+
+            foreach (var p in products)
+            {
+                Console.WriteLine(
+"Product Id: {0}, Name: {1}",p.Id,p.Name);
+            }
+            tx.Commit();
+        }
+        session.Close();
+    }
+}
+
+
+
+

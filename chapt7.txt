@@ -1,0 +1,754 @@
+public class DataAccessObject<T, TId>
+  where T : Entity<TId>
+{
+
+  private readonly ISessionFactory _sessionFactory;
+
+  private ISession session
+  {
+    get
+    {
+      return _sessionFactory.GetCurrentSession();
+    }
+  }
+
+  public DataAccessObject(ISessionFactory sessionFactory)
+  {
+    _sessionFactory = sessionFactory;
+  }
+
+  public T Get(TId id)
+  {
+    return WithinTransaction(() => session.Get<T>(id));
+  }
+
+  public T Load(TId id)
+  {
+    return WithinTransaction(() => session.Load<T>(id));
+  }
+
+  public void Save(T entity)
+  {
+    WithinTransaction(() => session.SaveOrUpdate(entity));
+  }
+
+  public void Delete(T entity)
+  {
+    WithinTransaction(() => session.Delete(entity));
+  }
+
+  private TResult WithinTransaction<TResult>(Func<TResult> func)
+  {
+    if (!session.Transaction.IsActive)
+    {
+      // Wrap in transaction
+      TResult result;
+      using (var tx = session.BeginTransaction())
+      {
+        result = func.Invoke();
+        tx.Commit();
+      }
+      return result;
+    }
+
+    // Don't wrap;
+    return func.Invoke();
+  }
+
+  private void WithinTransaction(Action action)
+  {
+    WithinTransaction<bool>(() =>
+    {
+      action.Invoke();
+      return false;
+    });
+  }
+
+}
+
+
+
+public class DataAccessObject<T>
+  : DataAccessObject<T, Guid>
+  where T : Entity
+{
+}
+public interface IRepository<T>: IEnumerable<T>
+  where T : Entity 
+{ 
+  void Add(T item);
+  bool Contains(T item);
+  int Count { get; }
+  bool Remove(T item);
+}
+
+
+
+protected readonly ISessionFactory _sessionFactory;
+
+protected virtual ISession session
+{
+  get
+  {
+    return _sessionFactory.GetCurrentSession();
+  }
+}
+
+public NHibernateBase(ISessionFactory sessionFactory)
+{
+  _sessionFactory = sessionFactory;
+}
+
+protected virtual TResult WithinTransaction<TResult>(
+Func<TResult> func)
+{
+  if (!session.Transaction.IsActive)
+  {
+    // Wrap in transaction
+    TResult result;
+    using (var tx = session.BeginTransaction())
+    {
+      result = func.Invoke();
+      tx.Commit();
+    }
+    return result;
+  }
+
+  // Don't wrap;
+  return func.Invoke();
+}
+
+protected virtual void WithinTransaction(Action action)
+{
+  WithinTransaction<bool>(() =>
+  {
+    action.Invoke();
+    return false;
+  });
+}
+
+
+
+public class NHibernateRepository<T> : 
+  NHibernateBase,
+  IRepository<T> where T : Entity
+{
+
+  public NHibernateRepository(
+    ISessionFactory sessionFactory)
+    : base(sessionFactory)
+  {
+  }
+
+  public void Add(T item)
+  {
+    WithinTransaction(() => session.Save(item));
+  }
+
+  public bool Contains(T item)
+  {
+    if (item.Id == default(Guid))
+      return false;
+    return WithinTransaction(() => 
+      session.Get<T>(item.Id)) != null;
+  }
+
+  public int Count
+  {
+    get
+    {
+      return WithinTransaction(() => 
+        session.Query<T>().Count());
+    }
+  }
+
+  public bool Remove(T item)
+  {
+    WithinTransaction(() => session.Delete(item));
+    return true;
+  }
+
+  public IEnumerator<T> GetEnumerator()
+  {
+    return WithinTransaction(() => session.Query<T>()
+           .Take(1000).GetEnumerator());
+  }
+
+  IEnumerator IEnumerable.GetEnumerator()
+  {
+    return WithinTransaction(() => GetEnumerator());
+  }
+
+}
+
+
+<mapping assembly="Eg.Core.Data.Impl"/>
+
+
+
+public interface IQuery
+{
+}
+
+public interface IQuery<TResult> : IQuery 
+{
+  TResult Execute();
+}
+
+
+public interface IQueryFactory
+{
+  TQuery CreateQuery<TQuery>() where TQuery :IQuery;
+}
+
+
+
+public interface IRepository<T> 
+  : IEnumerable<T>, IQueryFactory
+  where T : Entity 
+{
+  void Add(T item);
+  bool Contains(T item);
+  int Count { get; }
+  bool Remove(T item);
+}
+
+
+
+private readonly IQueryFactory _queryFactory;
+
+public NHibernateRepository(
+  ISessionFactory sessionFactory,
+  IQueryFactory queryFactory)
+  : base(sessionFactory)
+{
+  _queryFactory = queryFactory;
+}
+
+
+
+public TQuery CreateQuery<TQuery>() where TQuery : IQuery
+{
+  return _queryFactory.CreateQuery<TQuery>();
+}
+
+
+
+  Install-Package CommonServiceLocator
+
+
+public class QueryFactory : IQueryFactory 
+{
+  private readonly IServiceLocator _serviceLocator;
+
+  public QueryFactory(IServiceLocator serviceLocator)
+  {
+    _serviceLocator = serviceLocator;
+  }
+
+  public TQuery CreateQuery<TQuery>() where TQuery : IQuery
+  {
+    return _serviceLocator.GetInstance<TQuery>();
+  }
+}
+
+
+public abstract class NHibernateQueryBase<TResult> 
+  : NHibernateBase, IQuery<TResult>
+{
+  protected NHibernateQueryBase(
+    ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public abstract TResult Execute();
+}
+
+
+public interface INamedQuery
+{
+  string QueryName { get; }
+}
+
+
+public abstract class NamedQueryBase<TResult>
+  : NHibernateQueryBase<TResult>, INamedQuery
+{
+  protected NamedQueryBase(ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public override TResult Execute()
+  {
+    var nhQuery = GetNamedQuery();
+    return Transact(() => Execute(nhQuery));
+  }
+
+  protected abstract TResult Execute(IQuery query);
+
+  protected virtual IQuery GetNamedQuery()
+  {
+    var nhQuery = session.GetNamedQuery(QueryName);
+    SetParameters(nhQuery);
+    return nhQuery;
+  }
+
+  protected abstract void SetParameters(IQuery nhQuery);
+
+  public virtual string QueryName
+  {
+    get { return GetType().Name; }
+  }
+}
+ 
+
+
+[Test]
+public void NamedQueryCheck()
+{
+  var errors = new StringBuilder();
+
+  var queryObjectTypes = GetNamedQueryObjectTypes();
+  var mappedQueries = GetNamedQueryNames();
+
+  foreach (var queryType in queryObjectTypes)
+  {
+    var query = GetQuery(queryType);
+
+    if (!mappedQueries.Contains(query.QueryName))
+    {
+      errors.AppendFormat(
+        "Query object {0} references non-existent " + 
+        "named query {1}.",
+        queryType, query.QueryName);
+      errors.AppendLine();
+    }
+
+  }
+
+  if (errors.Length != 0)
+    Assert.Fail(errors.ToString());
+
+}
+
+private IEnumerable<Type> GetNamedQueryObjectTypes()
+{
+  var namedQueryType = typeof(INamedQuery);
+  var queryImplAssembly = typeof(BookWithISBN).Assembly;
+
+  var types = from t in queryImplAssembly.GetTypes()
+              where namedQueryType.IsAssignableFrom(t)
+              && t.IsClass
+              && !t.IsAbstract
+              select t;
+  return types;
+}
+
+private IEnumerable<string> GetNamedQueryNames()
+{
+  var nhCfg = NHConfigurator.Configuration;
+
+  var mappedQueries = nhCfg.NamedQueries.Keys
+    .Union(nhCfg.NamedSQLQueries.Keys);
+
+  return mappedQueries;
+}
+
+private INamedQuery GetQuery(Type queryType)
+{
+  return (INamedQuery) Activator.CreateInstance(
+    queryType, 
+    new object[] { SessionFactory });
+}
+
+
+
+public interface IBookWithISBN : IQuery<Book>
+{
+  string ISBN { get; set; }
+}
+
+
+
+public class BookWithISBN : 
+  NamedQueryBase<Book>, IBookWithISBN
+{
+
+  public BookWithISBN(ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public string ISBN { get; set; }
+
+  protected override void SetParameters(
+    NHibernate.IQuery nhQuery)
+  {
+    nhQuery.SetParameter("isbn", ISBN);
+  }
+
+  protected override Book Execute(NHibernate.IQuery query)
+  {
+    return query.UniqueResult<Book>();
+  }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8" ?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+  <query name="BookWithISBN">
+    <![CDATA[
+    from Book b where b.ISBN = :isbn
+    ]]>
+  </query>
+</hibernate-mapping>
+
+
+
+
+var query = bookRepository.CreateQuery<IBookWithISBN>();
+query.ISBN = "12345";
+var book = query.Execute();
+
+
+
+public abstract class CriteriaQueryBase<TResult> : 
+  NHibernateQueryBase<TResult>, ICriteriaQuery 
+{
+
+  public CriteriaQueryBase(ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public override TResult Execute()
+  {
+    var criteria = GetCriteria();
+    return WithinTransaction(() => Execute(criteria));
+  }
+
+  protected abstract ICriteria GetCriteria();
+
+  protected abstract TResult Execute(ICriteria criteria);
+
+}
+
+
+
+public enum AdvancedProductSearchOrderDirection
+{
+  Ascending,
+  Descending
+}
+
+
+
+public interface IAdvancedProductSearch 
+  : IQuery<IEnumerable<Product>>
+{
+
+  string Name { get; set; }
+  string Description { get; set; }
+  decimal? MinimumPrice { get; set; }
+  decimal? MaximumPrice { get; set; }
+  string OrderBy { get; set; }
+  AdvancedProductSearchOrderDirection OrderDirection 
+    { get; set; }
+}
+
+
+
+public class AdvancedProductSearch
+  : CriteriaQueryBase<IEnumerable<Product>>, 
+    IAdvancedProductSearch 
+{
+
+  public AdvancedProductSearch(
+    ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public string Name { get; set; }
+  public string Description { get; set; }
+  public decimal? MinimumPrice { get; set; }
+  public decimal? MaximumPrice { get; set; }
+  public string OrderBy { get; set; }
+  public AdvancedProductSearchOrderDirection OrderDirection 
+    { get; set; }
+
+  protected override ICriteria GetCriteria()
+  {
+    return GetProductQuery().UnderlyingCriteria;
+  }
+
+  protected override IEnumerable<Product> Execute(
+    ICriteria criteria)
+  {
+    return criteria.List<Product>();
+  }
+
+  private IQueryOver GetProductQuery()
+  {
+    var query = session.QueryOver<Product>();
+    AddProductCriterion(query);
+    return query;
+  }
+
+  private void AddProductCriterion(
+    IQueryOver<Product, Product> query) 
+  {
+
+    if (!string.IsNullOrEmpty(Name))
+      query = query.WhereRestrictionOn(p => p.Name)
+        .IsInsensitiveLike(Name, MatchMode.Anywhere);
+
+    if (!string.IsNullOrEmpty(Description))
+      query.WhereRestrictionOn(p => p.Description)
+        .IsInsensitiveLike(Description, MatchMode.Anywhere);
+
+    if (MinimumPrice.HasValue)
+      query.Where(p => p.UnitPrice >= MinimumPrice);
+
+    if (MaximumPrice.HasValue)
+      query.Where(p => p.UnitPrice <= MaximumPrice);
+
+    if (!string.IsNullOrEmpty(OrderBy))
+    {
+      var order = Property.ForName(OrderBy));
+      switch (OrderDirection)
+      {
+        case AdvanceProductSearchOrderDirection.Descending:
+          query = query.OrderBy(order).Desc;
+          break;
+        case AdvanceProductSearchOrderDirection.Ascending:
+          query = query.OrderBy(order).Asc;
+          break;
+      }
+    }
+    else
+    {
+      query = query.OrderBy(p => p.UnitPrice).Asc;
+    }
+  }
+}
+
+
+
+var query = repository.CreateQuery<IAdvancedProductSearch>();
+query.Name = searchData.PartialName;
+query.Description = searchData.PartialDescription;
+query.MinimumPrice = searchData.MinimumPrice;
+query.MaximumPrice = searchData.MaximumPrice;
+query.OrderBy = searchData.OrderBy;
+query.OrderDirection = searchData.OrderDirection;
+var results = query.Execute();
+
+
+public class PagedResult<T>
+{
+
+  public int TotalCount { get; set; }
+  public IEnumerable<T> Items { get; set; }
+
+}
+
+
+
+public interface IPagedQuery<T>
+  : IQuery<PagedResult<T>>
+{
+
+  int PageNumber { get; set; }
+  int PageSize { get; set; }
+
+}
+
+
+
+public abstract class PagedQueryOverBase<T>
+  : NHibernateQueryBase<PagedResult<T>>,
+    IPagedQuery<T>
+{
+
+  public PagedQueryOverBase(ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public int PageNumber { get; set; }
+  public int PageSize { get; set; }
+
+  public override PagedResult<T> Execute()
+  {
+    var query = GetQuery();
+    SetPaging(query);
+    return WithinTransaction(() => Execute(query));
+  }
+
+  protected abstract IQueryOver<T, T> GetQuery();
+
+  protected virtual void SetPaging(
+    IQueryOver<T, T> query)
+  {
+    int maxResults = PageSize;
+    int firstResult = (PageNumber - 1) * PageSize;
+    query.Skip(firstResult).Take(maxResults);
+  }
+
+  protected virtual PagedResult<T> Execute(
+    IQueryOver<T, T> query)
+  {
+    var results = query.Future<T>();
+    var count = query.ToRowCountQuery().FutureValue<int>();
+    return new PagedResult<T>()
+    {
+      Items = results,
+      TotalCount = count.Value
+    };
+  }
+
+}
+
+
+
+public interface IPagedProductSearch
+  : IPagedQuery<Product>
+{
+
+  string Name { get; set; }
+  string Description { get; set; }
+  decimal? MinimumPrice { get; set; }
+  decimal? MaximumPrice { get; set; }
+  string OrderBy { get; set; }
+  SortOrderDirection SortOrder
+    { get; set; }
+}
+
+
+
+public enum SortOrderDirection
+{
+  Ascending,
+  Descending
+}
+
+
+
+public class PagedProductSearch
+  : PagedQueryOverBase<Product>, 
+    IPagedProductSearch  
+{
+  public PagedProductSearch(ISessionFactory sessionFactory)
+    : base(sessionFactory) { }
+
+  public string Name { get; set; }
+  public string Description { get; set; }
+  public decimal? MinimumPrice { get; set; }
+  public decimal? MaximumPrice { get; set; }
+  public SortOrderDirection SortDirection { get; set; }
+
+  protected override IQueryOver<Product, Product> GetQuery()
+  {
+    var query = session.QueryOver<Product>();
+    if (!string.IsNullOrEmpty(Name))
+      query = query.WhereRestrictionOn(p => p.Name)
+        .IsInsensitiveLike(Name, MatchMode.Anywhere);
+
+    if (!string.IsNullOrEmpty(Description))
+      query.WhereRestrictionOn(p => p.Description)
+        .IsInsensitiveLike(Description, MatchMode.Anywhere);
+
+    if (MinimumPrice.HasValue)
+      query.Where(p => p.UnitPrice >= MinimumPrice);
+
+    if (MaximumPrice.HasValue)
+      query.Where(p => p.UnitPrice <= MaximumPrice);
+
+    if (!string.IsNullOrEmpty(OrderBy))
+    {
+      var order = Property.ForName(OrderBy));
+      switch (SortDirection)
+      {
+        case SortOrderDirection.Descending:
+          query = query.OrderBy(order).Desc;
+          break;
+        case SortOrderDirection.Ascending:
+          query = query.OrderBy(order).Asc;
+          break;
+      }
+    }
+    else
+    {
+      query = query.OrderBy(p => p.UnitPrice).Asc;
+    }
+    return query;
+  }
+}
+
+
+
+Install-Package LinqSpecs
+
+
+
+IEnumerable<T> FindAll(Specification<T> specification);
+T FindOne(Specification<T> specification);
+
+
+public IEnumerable<T> FindAll(Specification<T> specification)
+{
+  var query = GetQuery(specification);
+  return Transact(() => query.ToList());
+}
+
+public T FindOne(Specification<T> specification)
+{
+  var query = GetQuery(specification);
+  return Transact(() => query.SingleOrDefault());
+}
+
+private IQueryable<T> GetQuery(
+  Specification<T> specification)
+{
+  return session.Query<T>()
+    .Where(specification.IsSatisfiedBy());
+}
+
+
+
+public class MoviesDirectedBy : Specification<Movie>
+{
+  private readonly string _director;
+
+  public MoviesDirectedBy(string director)
+  {
+    _director = director;
+  }
+
+  public override 
+     Expression<Func<Movie, bool>> IsSatisfiedBy()
+  {
+    return m => m.Director == _director;
+  }
+}
+
+
+
+public class MoviesStarring : Specification<Movie>
+{
+  private readonly string _actor;
+
+  public MoviesStarring(string actor)
+  {
+    _actor = actor;
+  }
+
+  public override Expression<Func<Movie, bool>> IsSatisfiedBy()
+  {
+    return m => m.Actors.Any(a => a.Actor == _actor);
+  }
+}
+
+
+
+var movies = repository.FindAll(
+    new MoviesDirectedBy("Stephen Spielberg"));
+
+
+
+var movies = repository.FindAll(
+    new MoviesDirectedBy("Steven Spielberg")
+    && new MoviesStarring("Harrison Ford"));
+
