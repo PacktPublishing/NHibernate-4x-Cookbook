@@ -1,1 +1,0 @@
-All the Code snippet of NHibernate 4.x Cookbook are in txt formate.
