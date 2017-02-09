@@ -1,5 +1,5 @@
 # NHibernate 4.x Cookbook
-This is the code repository for [NHibernate 4.x Cookbook](https://www.packtpub.com/application-development/nhibernate-40-cookbook?utm_source=github&utm_medium=repository&utm_content=9781784396428),published by Packt.It contains all the supporting
+This is the code repository for [NHibernate 4.x Cookbook](https://www.packtpub.com/application-development/nhibernate-40-cookbook?utm_source=github&utm_medium=repository&utm_content=9781784396428), published by Packt. It contains all the supporting
 project files necessary to work through the book from start to finish.
 
 ## Instructions and Navigation
