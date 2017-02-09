@@ -2,6 +2,9 @@
 This is the code repository for [NHibernate 4.x Cookbook](https://www.packtpub.com/application-development/nhibernate-40-cookbook?utm_source=github&utm_medium=repository&utm_content=9781784396428), published by Packt. It contains all the supporting
 project files necessary to work through the book from start to finish.
 
+## About the Book
+This book will take you from the absolute basics of NHibernate through to its most advanced features, showing you how to take full advantage of each concept to quickly create amazing database applications. You will learn several techniques for each of the four core NHibernate tasks—configuration, mapping, session and transaction management, and querying—and which techniques fit best with various types of applications. In short, you will be able to build an application using NHibernate by the end of the book.
+
 ## Instructions and Navigation
 All of the code is organized into folders. The commands and instructions will look like the following:
 
